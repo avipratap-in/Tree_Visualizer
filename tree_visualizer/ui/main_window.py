@@ -168,6 +168,7 @@ class MainWindow:
             "build_reconstruct": c.build_reconstruct,
             "build_random": c.build_random,
             "bt_label_type_changed": self._on_bt_label_type_changed,
+            "show_status": c.set_status,
         })
 
     def _on_bt_label_type_changed(self, label_type: str) -> None:

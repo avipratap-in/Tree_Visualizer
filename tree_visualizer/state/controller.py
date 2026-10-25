@@ -478,8 +478,19 @@ class Controller:
     # Build from Traversal Operations
     # =========================================================================
 
-    def build_random(self, mode: str, label_type: str = "letters", n: int = 6) -> Tuple[str, Optional[str]]:
+    def build_random(
+        self,
+        mode: str,
+        label_type: str = "letters",
+        n: Optional[int] = None,
+    ) -> Tuple[str, Optional[str]]:
         """Generate a random valid traversal sequence pair for mode."""
+        import random
+
+        if n is None:
+            n = random.randint(3, 7)
+        if mode == "pre+post" and n % 2 == 0:
+            n += 1
         tokens1, tokens2 = generate_traversal_pair(mode=mode, n=n, labels=label_type)
         s1 = ", ".join(str(x) for x in tokens1)
         s2 = ", ".join(str(x) for x in tokens2) if tokens2 is not None else None
@@ -489,7 +500,25 @@ class Controller:
         """Reconstruct tree from traversal sequences."""
         diag = diagnose_sequences(mode, raw_seq1, raw_seq2)
         if not diag.valid:
-            self.set_status(diag.message, severity=diag.severity)
+            # Failed build must clear tree and never leave a stale tree looking like the result
+            self.current_tree = None
+            step = Step(
+                tree=None,
+                highlight_nodes=[],
+                highlight_edges=[],
+                visited=[],
+                message=f"Reconstruction Error: {diag.message}",
+                pseudo_line=0,
+                stats={"n": 0, "h": 0},
+            )
+            self.player.load_timeline(
+                ["Tree reconstruction failed: invalid traversal sequence(s)."],
+                [step],
+                auto_play=False,
+            )
+            sev = diag.severity if diag.severity in ("warning", "error") else "error"
+            msg = diag.message if sev == "warning" else f"Reconstruction Error: {diag.message}"
+            self.set_status(msg, severity=sev)
             return
 
         self.save_history()
@@ -514,14 +543,46 @@ class Controller:
             elif mode == "bst-post":
                 pseudo, steps = record_build_bst_from_postorder(p1.tokens)
             else:
+                self.current_tree = None
                 self.set_status(f"Unknown reconstruction mode: '{mode}'", severity="error")
                 return
 
             self._apply_recorded_result(pseudo, steps, auto_play=True)
+            self.set_status(steps[-1].message, severity="info")
         except AmbiguousTreeError as e:
+            self.current_tree = None
+            step = Step(
+                tree=None,
+                highlight_nodes=[],
+                highlight_edges=[],
+                visited=[],
+                message=f"Reconstruction Error: {e}",
+                pseudo_line=0,
+                stats={"n": 0, "h": 0},
+            )
+            self.player.load_timeline(
+                ["Tree reconstruction failed: ambiguous reconstruction."],
+                [step],
+                auto_play=False,
+            )
             self.set_status(f"⚠️ Ambiguity Warning: {e}", severity="warning")
-        except (TreeBuildError, TreeError, ValueError) as e:
-            self.set_status(str(e), severity="error")
+        except (TreeBuildError, TreeError, ValueError, Exception) as e:
+            self.current_tree = None
+            step = Step(
+                tree=None,
+                highlight_nodes=[],
+                highlight_edges=[],
+                visited=[],
+                message=f"Reconstruction Error: {e}",
+                pseudo_line=0,
+                stats={"n": 0, "h": 0},
+            )
+            self.player.load_timeline(
+                ["Tree reconstruction failed: sequences could not form a valid binary tree."],
+                [step],
+                auto_play=False,
+            )
+            self.set_status(f"Reconstruction Error: {e}", severity="error")
 
     # =========================================================================
     # Share & Export

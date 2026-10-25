@@ -44,6 +44,9 @@ class CollapsibleSidebar(ttk.Frame):
         # Callbacks hooked to Controller
         self.callbacks: Dict[str, Callable[..., Any]] = {}
 
+        # Real-time debounce timer ID for reconstruction sequence validation
+        self._build_debounce_timer: Optional[str] = None
+
         self.pack_propagate(False)
         self._build_ui()
         self.theme_manager.register_listener(self.on_theme_updated)
@@ -136,6 +139,8 @@ class CollapsibleSidebar(ttk.Frame):
                 panel.pack_forget()
 
         self.canvas_container.yview_moveto(0)
+
+    set_active_tab = set_tab
 
     def toggle_collapse(self) -> None:
         """Toggle sidebar collapsed / expanded state."""
@@ -546,87 +551,338 @@ class CollapsibleSidebar(ttk.Frame):
         self.build_mode_cb.pack(fill=tk.X, pady=(2, 4))
         self.build_mode_cb.bind("<<ComboboxSelected>>", self._handle_build_mode_changed)
 
-        # Ambiguity Warning Banner
+        # Ambiguity Warning Banner (Preorder + Postorder only)
         self.ambiguity_banner = tk.Label(
             sec_mode,
-            text="⚠️ Note: Preorder + Postorder uniquely reconstructs Full Binary Trees only.",
+            text="⚠️ Ambiguity Note: Preorder + Postorder only uniquely reconstructs Full Binary Trees (where every node has 0 or 2 children). Any single-child node will trigger an ambiguity error.",
             bg="#fef08a",
             fg="#854d0e",
             font=get_ui_font(8),
             wraplength=self.PANEL_WIDTH - 40,
             justify=tk.LEFT,
-            padx=6,
-            pady=4,
+            padx=8,
+            pady=6,
+            bd=1,
+            relief="solid",
         )
 
         # Section: Sequences
-        sec_seq = self._create_section(panel, "Sequences")
-        self.lbl_seq1 = ttk.Label(sec_seq, text="Inorder Sequence:", style="Panel.TLabel")
+        self.sec_seq = self._create_section(panel, "Sequences")
+
+        # Sequence 1
+        self.lbl_seq1 = ttk.Label(self.sec_seq, text="Inorder Sequence:", style="Panel.TLabel")
         self.lbl_seq1.pack(anchor="w", pady=(2, 1))
-        self.build_seq1_entry = ttk.Entry(sec_seq)
-        self.build_seq1_entry.insert(0, "D, B, E, A, F, C")
-        self.build_seq1_entry.pack(fill=tk.X, pady=(0, 6))
-        self.build_seq1_entry.bind("<KeyRelease>", lambda e: self._diagnose_build_sequences())
 
-        self.lbl_seq2 = ttk.Label(sec_seq, text="Preorder Sequence:", style="Panel.TLabel")
+        self.build_seq1_entry = ttk.Entry(self.sec_seq)
+        self.build_seq1_entry.insert(0, "D, B, E, A, C")
+        self.build_seq1_entry.pack(fill=tk.X, pady=(0, 2))
+        self.build_seq1_entry.bind("<KeyRelease>", lambda e: self._trigger_build_validation())
+
+        self.build_seq1_hint = tk.Label(
+            self.sec_seq,
+            text="",
+            font=get_ui_font(8, italic=True),
+            wraplength=self.PANEL_WIDTH - 40,
+            justify=tk.LEFT,
+            anchor="w",
+        )
+        self.build_seq1_hint.pack(fill=tk.X, pady=(0, 6))
+
+        # Sequence 2 Group
+        self.build_seq2_group = ttk.Frame(self.sec_seq, style="Sidebar.TFrame")
+        self.build_seq2_group.pack(fill=tk.X)
+
+        self.lbl_seq2 = ttk.Label(self.build_seq2_group, text="Preorder Sequence:", style="Panel.TLabel")
         self.lbl_seq2.pack(anchor="w", pady=(2, 1))
-        self.build_seq2_entry = ttk.Entry(sec_seq)
-        self.build_seq2_entry.insert(0, "A, B, D, E, C, F")
-        self.build_seq2_entry.pack(fill=tk.X, pady=(0, 6))
-        self.build_seq2_entry.bind("<KeyRelease>", lambda e: self._diagnose_build_sequences())
 
-        # Real-time suggestions/validation status
-        self.validation_frame = ttk.Frame(sec_seq, style="Card.TFrame", padding=6)
-        self.validation_frame.pack(fill=tk.X, pady=(2, 8))
-        self.lbl_val_msg = ttk.Label(
-            self.validation_frame,
-            text="Sequences ready to build.",
-            style="Muted.TLabel",
+        self.build_seq2_entry = ttk.Entry(self.build_seq2_group)
+        self.build_seq2_entry.insert(0, "A, B, D, E, C")
+        self.build_seq2_entry.pack(fill=tk.X, pady=(0, 2))
+        self.build_seq2_entry.bind("<KeyRelease>", lambda e: self._trigger_build_validation())
+
+        self.build_seq2_hint = tk.Label(
+            self.build_seq2_group,
+            text="",
+            font=get_ui_font(8, italic=True),
+            wraplength=self.PANEL_WIDTH - 40,
+            justify=tk.LEFT,
+            anchor="w",
+        )
+        self.build_seq2_hint.pack(fill=tk.X, pady=(0, 6))
+
+        # Real-time Validation Card / Box
+        self.build_val_box = tk.Frame(
+            self.sec_seq,
+            bd=1,
+            relief="solid",
+            padx=8,
+            pady=6,
+        )
+        self.lbl_val_msg = tk.Label(
+            self.build_val_box,
+            text="",
+            font=get_ui_font(8, bold=True),
             wraplength=self.PANEL_WIDTH - 50,
+            justify=tk.LEFT,
+            anchor="w",
         )
         self.lbl_val_msg.pack(fill=tk.X)
 
+        self.build_suggestions_frame = tk.Frame(self.build_val_box)
+        self.build_suggestions_frame.pack(fill=tk.X, pady=(4, 0))
+
         # Action Buttons
         row_actions = ttk.Frame(panel, style="Sidebar.TFrame")
-        row_actions.pack(fill=tk.X, pady=(4, 4))
+        row_actions.pack(fill=tk.X, pady=(6, 4))
 
-        btn_build = ttk.Button(
+        self.btn_build_animate = ttk.Button(
             row_actions,
             text="Build & Animate",
             style="Primary.TButton",
             command=self._handle_build_animate,
         )
-        btn_build.pack(fill=tk.X, pady=(0, 4))
-        self.operation_buttons.append(btn_build)
+        self.btn_build_animate.pack(fill=tk.X, pady=(0, 4))
+        self.operation_buttons.append(self.btn_build_animate)
 
+        # Row: Random, Labels selector, Auto-run
         row_sub = ttk.Frame(panel, style="Sidebar.TFrame")
-        row_sub.pack(fill=tk.X)
+        row_sub.pack(fill=tk.X, pady=(2, 2))
 
-        btn_rand_pair = ttk.Button(
+        self.btn_build_random = ttk.Button(
             row_sub,
-            text="Random Pair",
+            text="Random",
             style="TButton",
             command=self._handle_build_random,
         )
-        btn_rand_pair.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        self.operation_buttons.append(btn_rand_pair)
+        self.btn_build_random.pack(side=tk.LEFT, padx=(0, 4))
+        self.operation_buttons.append(self.btn_build_random)
 
+        ttk.Label(row_sub, text="Labels:", style="Muted.TLabel").pack(side=tk.LEFT, padx=(2, 2))
         self.build_label_cb = ttk.Combobox(
             row_sub,
-            values=["Letters", "Numbers"],
+            values=["Letters A-Z", "Numbers 1-99"],
             state="readonly",
-            width=8,
+            width=11,
         )
         self.build_label_cb.current(0)
-        self.build_label_cb.pack(side=tk.RIGHT, padx=(3, 0))
+        self.build_label_cb.pack(side=tk.LEFT, padx=(0, 6))
 
-    def _diagnose_build_sequences(self) -> None:
-        """Run real-time diagnostics on current sequence pair."""
+        self.build_auto_run_var = tk.BooleanVar(value=False)
+        self.chk_auto_run = ttk.Checkbutton(
+            row_sub,
+            text="Auto-run",
+            variable=self.build_auto_run_var,
+            style="TCheckbutton",
+        )
+        self.chk_auto_run.pack(side=tk.RIGHT)
+
+        # Run initial mode update and validation
+        self._update_build_mode_ui()
+        self._perform_build_validation()
+
+    def _trigger_build_validation(self) -> None:
+        """Debounce real-time sequence validation by 300 ms."""
+        if self._build_debounce_timer:
+            try:
+                self.after_cancel(self._build_debounce_timer)
+            except Exception:
+                pass
+            self._build_debounce_timer = None
+        self._build_debounce_timer = self.after(300, self._perform_build_validation)
+
+    def _perform_build_validation(self) -> None:
+        """Execute sequence diagnostics and update hints and validation box."""
+        self._build_debounce_timer = None
         mode = self._get_build_mode_key()
-        s1 = self.build_seq1_entry.get().strip()
-        s2 = self.build_seq2_entry.get().strip() if mode not in ("bst-pre", "bst-post") else None
-        diag = diagnose_sequences(mode, s1, s2)
-        self.lbl_val_msg.configure(text=diag.message)
+        raw1 = self.build_seq1_entry.get().strip()
+        is_two = mode in ("in+pre", "in+post", "in+level", "pre+post")
+        raw2 = self.build_seq2_entry.get().strip() if is_two else None
+
+        t = self.theme_manager.current
+        bg_panel = t.get("bg_panel", "#1e293b")
+        text_muted = t.get("text_muted", "#94a3b8")
+        success_fg = "#10b981" if self.theme_manager.is_dark() else "#059669"
+        error_fg = "#ef4444" if self.theme_manager.is_dark() else "#dc2626"
+
+        # If both fields are empty, clear hints and hide box
+        if not raw1 and (not is_two or not raw2):
+            self.build_seq1_hint.configure(text="", bg=bg_panel, fg=text_muted)
+            self.build_seq2_hint.configure(text="", bg=bg_panel, fg=text_muted)
+            self.build_val_box.pack_forget()
+            return
+
+        diag = diagnose_sequences(mode, raw1, raw2)
+
+        # 1. Update Sequence 1 Hint
+        p1_tokens = diag.seq1.get("tokens", [])
+        if p1_tokens:
+            note = f" ({diag.seq1.get('notes', [''])[0]})" if diag.seq1.get("notes") else ""
+            tok_str = ", ".join(str(x) for x in p1_tokens)
+            if diag.valid:
+                self.build_seq1_hint.configure(
+                    text=f"✓ Interpreted as: {tok_str}{note}",
+                    bg=bg_panel,
+                    fg=success_fg,
+                )
+            else:
+                self.build_seq1_hint.configure(
+                    text=f"Interpreted as: {tok_str}{note}",
+                    bg=bg_panel,
+                    fg=text_muted,
+                )
+        elif raw1:
+            self.build_seq1_hint.configure(
+                text="Empty or unparseable",
+                bg=bg_panel,
+                fg=error_fg,
+            )
+        else:
+            self.build_seq1_hint.configure(text="", bg=bg_panel, fg=text_muted)
+
+        # 2. Update Sequence 2 Hint (if 2-sequence mode)
+        if is_two and diag.seq2 is not None:
+            p2_tokens = diag.seq2.get("tokens", [])
+            if p2_tokens:
+                note = f" ({diag.seq2.get('notes', [''])[0]})" if diag.seq2.get("notes") else ""
+                tok_str = ", ".join(str(x) for x in p2_tokens)
+                if diag.valid:
+                    self.build_seq2_hint.configure(
+                        text=f"✓ Interpreted as: {tok_str}{note}",
+                        bg=bg_panel,
+                        fg=success_fg,
+                    )
+                else:
+                    self.build_seq2_hint.configure(
+                        text=f"Interpreted as: {tok_str}{note}",
+                        bg=bg_panel,
+                        fg=text_muted,
+                    )
+            elif raw2:
+                self.build_seq2_hint.configure(
+                    text="Empty or unparseable",
+                    bg=bg_panel,
+                    fg=error_fg,
+                )
+            else:
+                self.build_seq2_hint.configure(text="", bg=bg_panel, fg=text_muted)
+        else:
+            self.build_seq2_hint.configure(text="", bg=bg_panel, fg=text_muted)
+
+        # 3. Update Validation Box
+        if diag.severity == "neutral" or not diag.message:
+            self.build_val_box.pack_forget()
+            return
+
+        self.build_val_box.pack(fill=tk.X, pady=(2, 6))
+
+        # Status card color styling
+        is_dark = self.theme_manager.is_dark()
+        if diag.severity == "success":
+            card_bg = "#064e3b" if is_dark else "#f0fdf4"
+            card_fg = "#6ee7b7" if is_dark else "#166534"
+            card_bd = "#059669" if is_dark else "#86efac"
+            icon = "✓"
+        elif diag.severity == "warning":
+            card_bg = "#422006" if is_dark else "#fef9c3"
+            card_fg = "#fef08a" if is_dark else "#854d0e"
+            card_bd = "#ca8a04" if is_dark else "#fde047"
+            icon = "⚠️"
+        elif diag.severity == "error":
+            card_bg = "#450a0a" if is_dark else "#fee2e2"
+            card_fg = "#fca5a5" if is_dark else "#991b1b"
+            card_bd = "#dc2626" if is_dark else "#fca5a5"
+            icon = "✕"
+        else:
+            card_bg = t.get("bg_panel_alt", "#334155")
+            card_fg = t.get("text_main", "#f8fafc")
+            card_bd = t.get("border_color", "#334155")
+            icon = "ℹ"
+
+        self.build_val_box.configure(bg=card_bg, highlightbackground=card_bd, highlightcolor=card_bd)
+        self.lbl_val_msg.configure(text=f"{icon} {diag.message}", bg=card_bg, fg=card_fg)
+        self.build_suggestions_frame.configure(bg=card_bg)
+
+        # Re-render suggestion buttons
+        for w in self.build_suggestions_frame.winfo_children():
+            w.destroy()
+
+        for s in diag.suggestions:
+            stype = s.get("type")
+            if stype == "replace":
+                row = tk.Frame(self.build_suggestions_frame, bg=card_bg)
+                row.pack(fill=tk.X, pady=2)
+                f_name = "Sequence 1" if s.get("field") == "seq1" else "Sequence 2"
+                lbl = tk.Label(
+                    row,
+                    text=f"Did you mean {f_name}: {s.get('value')}?",
+                    bg=card_bg,
+                    fg=card_fg,
+                    font=get_ui_font(8),
+                    wraplength=self.PANEL_WIDTH - 120,
+                    justify=tk.LEFT,
+                )
+                lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+                btn = ttk.Button(
+                    row,
+                    text="Use this",
+                    style="TButton",
+                    command=lambda fld=s.get("field"), val=s.get("value"): self._apply_replace_suggestion(fld, val),
+                )
+                btn.pack(side=tk.RIGHT)
+                self.operation_buttons.append(btn)
+
+            elif stype == "swap_fields":
+                btn = ttk.Button(
+                    self.build_suggestions_frame,
+                    text="⇄ Swap Sequences",
+                    style="TButton",
+                    command=self._apply_swap_suggestion,
+                )
+                btn.pack(fill=tk.X, pady=2)
+                self.operation_buttons.append(btn)
+
+            elif stype == "switch_mode":
+                target_mode = s.get("mode")
+                lbl_mode = s.get("label", target_mode)
+                btn = ttk.Button(
+                    self.build_suggestions_frame,
+                    text=f"Switch mode to {lbl_mode}",
+                    style="TButton",
+                    command=lambda m=target_mode: self._apply_mode_suggestion(m),
+                )
+                btn.pack(fill=tk.X, pady=2)
+                self.operation_buttons.append(btn)
+
+    def _apply_replace_suggestion(self, field: Optional[str], value: Optional[str]) -> None:
+        """Apply one-click replacement suggestion to specified sequence entry."""
+        if not value:
+            return
+        if field == "seq1":
+            self.build_seq1_entry.delete(0, tk.END)
+            self.build_seq1_entry.insert(0, value)
+        elif field == "seq2":
+            self.build_seq2_entry.delete(0, tk.END)
+            self.build_seq2_entry.insert(0, value)
+        self._perform_build_validation()
+
+    def _apply_swap_suggestion(self) -> None:
+        """Swap contents of sequence 1 and sequence 2."""
+        s1 = self.build_seq1_entry.get()
+        s2 = self.build_seq2_entry.get()
+        self.build_seq1_entry.delete(0, tk.END)
+        self.build_seq1_entry.insert(0, s2)
+        self.build_seq2_entry.delete(0, tk.END)
+        self.build_seq2_entry.insert(0, s1)
+        self._perform_build_validation()
+
+    def _apply_mode_suggestion(self, mode_key: str) -> None:
+        """Switch mode combobox to target mode key and update UI."""
+        modes = ["in+pre", "in+post", "in+level", "pre+post", "bst-pre", "bst-post"]
+        if mode_key in modes:
+            self.build_mode_cb.current(modes.index(mode_key))
+            self._update_build_mode_ui()
+            self._perform_build_validation()
 
     # =========================================================================
     # Helpers & Handlers
@@ -762,41 +1018,72 @@ class CollapsibleSidebar(ttk.Frame):
         modes = ["in+pre", "in+post", "in+level", "pre+post", "bst-pre", "bst-post"]
         return modes[self.build_mode_cb.current()]
 
-    def _handle_build_mode_changed(self, event: tk.Event) -> None:
+    def _update_build_mode_ui(self) -> None:
+        """Update sequence labels, visibility, and ambiguity banner based on mode."""
         mode = self._get_build_mode_key()
         if mode == "pre+post":
             self.ambiguity_banner.pack(fill=tk.X, pady=(2, 4))
         else:
             self.ambiguity_banner.pack_forget()
 
-        if mode in ("bst-pre", "bst-post"):
-            self.lbl_seq1.configure(text="Preorder / Postorder Sequence:")
-            self.lbl_seq2.pack_forget()
-            self.build_seq2_entry.pack_forget()
-        else:
+        if mode == "in+pre":
             self.lbl_seq1.configure(text="Inorder Sequence:")
-            self.lbl_seq2.pack(anchor="w", pady=(2, 1))
-            self.build_seq2_entry.pack(fill=tk.X, pady=(0, 6))
+            self.lbl_seq2.configure(text="Preorder Sequence:")
+            self.build_seq2_group.pack(fill=tk.X)
+        elif mode == "in+post":
+            self.lbl_seq1.configure(text="Inorder Sequence:")
+            self.lbl_seq2.configure(text="Postorder Sequence:")
+            self.build_seq2_group.pack(fill=tk.X)
+        elif mode == "in+level":
+            self.lbl_seq1.configure(text="Inorder Sequence:")
+            self.lbl_seq2.configure(text="Level Order Sequence:")
+            self.build_seq2_group.pack(fill=tk.X)
+        elif mode == "pre+post":
+            self.lbl_seq1.configure(text="Preorder Sequence:")
+            self.lbl_seq2.configure(text="Postorder Sequence:")
+            self.build_seq2_group.pack(fill=tk.X)
+        elif mode == "bst-pre":
+            self.lbl_seq1.configure(text="Preorder Sequence (numbers or case-sensitive letters):")
+            self.build_seq2_group.pack_forget()
+        elif mode == "bst-post":
+            self.lbl_seq1.configure(text="Postorder Sequence (numbers or case-sensitive letters):")
+            self.build_seq2_group.pack_forget()
 
-        self._diagnose_build_sequences()
+    def _handle_build_mode_changed(self, event: tk.Event) -> None:
+        self._update_build_mode_ui()
+        self._perform_build_validation()
 
     def _handle_build_animate(self) -> None:
+        mode = self._get_build_mode_key()
+        s1 = self.build_seq1_entry.get().strip()
+        is_two = mode in ("in+pre", "in+post", "in+level", "pre+post")
+        s2 = self.build_seq2_entry.get().strip() if is_two else None
+
+        if not s1 or (is_two and not s2):
+            cb_status = self.callbacks.get("show_status")
+            if cb_status:
+                cb_status("Please provide the required traversal sequence(s).", "warning")
+            return
+
         cb = self.callbacks.get("build_reconstruct")
         if cb:
-            mode = self._get_build_mode_key()
-            s1 = self.build_seq1_entry.get().strip()
-            s2 = self.build_seq2_entry.get().strip() if mode not in ("bst-pre", "bst-post") else None
             cb(mode, s1, s2)
 
     def _handle_build_random(self) -> None:
         cb = self.callbacks.get("build_random")
         if cb:
             mode = self._get_build_mode_key()
-            label_type = "letters" if self.build_label_cb.get() == "Letters" else "numbers"
+            label_choice = self.build_label_cb.get()
+            label_type = "letters" if "Letters" in label_choice else "numbers"
             s1, s2 = cb(mode, label_type)
             self.build_seq1_entry.delete(0, tk.END)
             self.build_seq1_entry.insert(0, s1)
             if s2 is not None:
                 self.build_seq2_entry.delete(0, tk.END)
                 self.build_seq2_entry.insert(0, s2)
-            self._diagnose_build_sequences()
+            else:
+                self.build_seq2_entry.delete(0, tk.END)
+            self._perform_build_validation()
+
+            if self.build_auto_run_var.get():
+                self._handle_build_animate()

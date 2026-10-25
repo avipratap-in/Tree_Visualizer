@@ -59,10 +59,14 @@ def parse_sequence(raw: Optional[str], is_level_order: bool = False) -> ParsedSe
     notes: List[str] = []
     warnings: List[str] = []
 
-    # Strip surrounding brackets/parentheses
-    if (cleaned.startswith("[") and cleaned.endswith("]")) or \
-       (cleaned.startswith("(") and cleaned.endswith(")")) or \
-       (cleaned.startswith("{") and cleaned.endswith("}")):
+    # Strip surrounding brackets/parentheses/whole-sequence quotes
+    while (
+        (cleaned.startswith("[") and cleaned.endswith("]"))
+        or (cleaned.startswith("(") and cleaned.endswith(")"))
+        or (cleaned.startswith("{") and cleaned.endswith("}"))
+        or (cleaned.startswith('"') and cleaned.endswith('"') and cleaned.count('"') == 2)
+        or (cleaned.startswith("'") and cleaned.endswith("'") and cleaned.count("'") == 2)
+    ):
         cleaned = cleaned[1:-1].strip()
 
     # Check for presence of common delimiters
