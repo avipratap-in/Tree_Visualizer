@@ -449,6 +449,22 @@ class CanvasView(tk.Frame):
 
         _step_anim(step_delta)
 
+    def destroy(self) -> None:
+        """Cancel active animation tweens and cleanly destroy widget."""
+        if hasattr(self, "_reset_after_id") and self._reset_after_id:
+            try:
+                self.after_cancel(self._reset_after_id)
+            except Exception:
+                pass
+            self._reset_after_id = None
+        if hasattr(self, "_tween_after_id") and self._tween_after_id:
+            try:
+                self.after_cancel(self._tween_after_id)
+            except Exception:
+                pass
+            self._tween_after_id = None
+        super().destroy()
+
     def set_pseudocode(self, lines: List[str], active_idx: Optional[int] = None) -> None:
         """Update pseudocode lines on the overlay."""
         self.pseudocode_panel.set_pseudocode(lines, active_idx)

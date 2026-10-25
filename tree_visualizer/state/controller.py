@@ -279,8 +279,13 @@ class Controller:
 
     def bst_search(self, val: Any) -> None:
         """Search for a value in the BST."""
+        p = parse_sequence(str(val))
+        if not p.tokens:
+            self.set_status("Please enter a search value.", severity="warning")
+            return
+        target = p.tokens[0]
         try:
-            pseudo, steps = record_search(self.current_tree, val)
+            pseudo, steps = record_search(self.current_tree, target)
             self.player.load_timeline(pseudo, steps, auto_play=True)
             self.set_status(steps[-1].message, severity="info")
         except (MixedTypesError, ValueError) as e:
@@ -288,29 +293,45 @@ class Controller:
 
     def bst_remove(self, val: Any) -> None:
         """Remove a value from the BST."""
+        p = parse_sequence(str(val))
+        if not p.tokens:
+            self.set_status("Please enter a value to remove.", severity="warning")
+            return
+        target = p.tokens[0]
         self.save_history()
         try:
-            pseudo, steps = record_remove(self.current_tree, val)
+            pseudo, steps = record_remove(self.current_tree, target)
             self._apply_recorded_result(pseudo, steps, auto_play=True)
         except (MixedTypesError, ValueError) as e:
             self.set_status(str(e), severity="error")
 
     def bst_min(self) -> None:
         """Find minimum value in the BST."""
+        if self.current_tree is None:
+            self.set_status("Tree is empty. Cannot find min.", severity="warning")
+            return
         pseudo, steps = record_min(self.current_tree)
         self.player.load_timeline(pseudo, steps, auto_play=True)
         self.set_status(steps[-1].message, severity="info")
 
     def bst_max(self) -> None:
         """Find maximum value in the BST."""
+        if self.current_tree is None:
+            self.set_status("Tree is empty. Cannot find max.", severity="warning")
+            return
         pseudo, steps = record_max(self.current_tree)
         self.player.load_timeline(pseudo, steps, auto_play=True)
         self.set_status(steps[-1].message, severity="info")
 
     def bst_predecessor(self, val: Any) -> None:
         """Find inorder predecessor in the BST."""
+        p = parse_sequence(str(val))
+        if not p.tokens:
+            self.set_status("Please enter a target value.", severity="warning")
+            return
+        target = p.tokens[0]
         try:
-            pseudo, steps = record_predecessor(self.current_tree, val)
+            pseudo, steps = record_predecessor(self.current_tree, target)
             self.player.load_timeline(pseudo, steps, auto_play=True)
             self.set_status(steps[-1].message, severity="info")
         except (MixedTypesError, ValueError) as e:
@@ -318,8 +339,13 @@ class Controller:
 
     def bst_successor(self, val: Any) -> None:
         """Find inorder successor in the BST."""
+        p = parse_sequence(str(val))
+        if not p.tokens:
+            self.set_status("Please enter a target value.", severity="warning")
+            return
+        target = p.tokens[0]
         try:
-            pseudo, steps = record_successor(self.current_tree, val)
+            pseudo, steps = record_successor(self.current_tree, target)
             self.player.load_timeline(pseudo, steps, auto_play=True)
             self.set_status(steps[-1].message, severity="info")
         except (MixedTypesError, ValueError) as e:
@@ -327,8 +353,13 @@ class Controller:
 
     def bst_rank(self, val: Any) -> None:
         """Compute rank of value in the BST."""
+        p = parse_sequence(str(val))
+        if not p.tokens:
+            self.set_status("Please enter a value for rank.", severity="warning")
+            return
+        target = p.tokens[0]
         try:
-            pseudo, steps = record_rank(self.current_tree, val)
+            pseudo, steps = record_rank(self.current_tree, target)
             self.player.load_timeline(pseudo, steps, auto_play=True)
             self.set_status(steps[-1].message, severity="info")
         except (MixedTypesError, ValueError) as e:
@@ -336,6 +367,12 @@ class Controller:
 
     def bst_select(self, k: int) -> None:
         """Select k-th smallest element in the BST."""
+        if k < 1:
+            self.set_status("Please enter a valid rank k (1-indexed).", severity="warning")
+            return
+        if self.current_tree is None:
+            self.set_status("Tree is empty. Cannot select k-th element.", severity="warning")
+            return
         pseudo, steps = record_select(self.current_tree, k)
         self.player.load_timeline(pseudo, steps, auto_play=True)
         self.set_status(steps[-1].message, severity="info")
@@ -440,6 +477,13 @@ class Controller:
     # =========================================================================
     # Build from Traversal Operations
     # =========================================================================
+
+    def build_random(self, mode: str, label_type: str = "letters", n: int = 6) -> Tuple[str, Optional[str]]:
+        """Generate a random valid traversal sequence pair for mode."""
+        tokens1, tokens2 = generate_traversal_pair(mode=mode, n=n, labels=label_type)
+        s1 = ", ".join(str(x) for x in tokens1)
+        s2 = ", ".join(str(x) for x in tokens2) if tokens2 is not None else None
+        return s1, s2
 
     def build_reconstruct(self, mode: str, raw_seq1: str, raw_seq2: Optional[str] = None) -> None:
         """Reconstruct tree from traversal sequences."""

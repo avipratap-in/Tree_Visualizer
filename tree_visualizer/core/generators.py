@@ -121,6 +121,7 @@ def generate_traversal_pair(
     mode: str,
     n: int = 7,
     labels: str = "letters",
+    label_type: Optional[str] = None,
 ) -> Tuple[List[Any], Optional[List[Any]]]:
     """Generate valid, reconstructible traversal sequences for any given mode.
 
@@ -128,7 +129,8 @@ def generate_traversal_pair(
     Returns:
         (seq1, seq2) for 2-sequence modes, or (seq1, None) for single-sequence BST modes.
     """
-    clamped_n = validate_and_clamp_n(n, labels)
+    effective_labels = label_type if label_type is not None else labels
+    clamped_n = validate_and_clamp_n(n, effective_labels)
 
     if mode in {"in+pre", "in+post", "in+level"}:
         root = generate_random_binary_tree(clamped_n, labels)

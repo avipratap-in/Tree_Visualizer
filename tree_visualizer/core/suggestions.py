@@ -364,7 +364,7 @@ def diagnose_sequences(
         result.message = f"⚠️ Ambiguity Warning: {e}"
         return result
 
-    except TreeBuildError as e:
+    except (TreeBuildError, Exception) as e:
         result.severity = "error"
         result.message = str(e)
 

@@ -2,14 +2,18 @@
 
 Contains dedicated controls for:
 - BST Tab: Random/Array creation, Presets, Insert, Search, Remove, Min/Max, Pred/Succ, Rank/Select.
-- Binary Tree Tab: Random generation, Level-order loader, Traversals, Properties card grid.
-- Build from Traversal Tab: Mode selection, Sequence inputs, Validation box, Build & Animate.
+- Binary Tree Tab: Random generation (numeric/alphabetic remembered), Lenient Level-order loader
+  with "Interpreted as: ..." hint, Traversals, Properties card grid.
+- Build from Traversal Tab: Mode selection, Sequence inputs, Live validation/diagnostics, Build & Animate.
+- Operation button disabling during animation playback.
 """
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
+from tree_visualizer.core.parsing import parse_level_order
+from tree_visualizer.core.suggestions import diagnose_sequences
 from tree_visualizer.ui.fonts import get_ui_font
 from tree_visualizer.ui.theme import ThemeManager
 
@@ -24,13 +28,18 @@ class CollapsibleSidebar(ttk.Frame):
         master: tk.Widget,
         theme_manager: ThemeManager,
         on_collapse_toggled: Optional[Callable[[bool], None]] = None,
+        initial_bt_label_type: str = "numbers",
         **kwargs,
     ) -> None:
         super().__init__(master, style="Sidebar.TFrame", width=self.PANEL_WIDTH, **kwargs)
         self.theme_manager: ThemeManager = theme_manager
         self.on_collapse_toggled: Optional[Callable[[bool], None]] = on_collapse_toggled
+        self.initial_bt_label_type: str = initial_bt_label_type
         self.is_collapsed: bool = False
         self.active_tab: str = "bst"
+
+        # List of all action buttons to enable/disable during animation playback
+        self.operation_buttons: List[ttk.Button] = []
 
         # Callbacks hooked to Controller
         self.callbacks: Dict[str, Callable[..., Any]] = {}
@@ -105,7 +114,6 @@ class CollapsibleSidebar(ttk.Frame):
         self.set_tab("bst")
 
     def _on_mousewheel(self, event: tk.Event) -> None:
-        # Only scroll if cursor is within sidebar canvas
         x, y = self.winfo_pointerxy()
         widget = self.winfo_containing(x, y)
         if widget and str(self.canvas_container) in str(widget):
@@ -127,7 +135,6 @@ class CollapsibleSidebar(ttk.Frame):
             else:
                 panel.pack_forget()
 
-        # Reset scroll position
         self.canvas_container.yview_moveto(0)
 
     def toggle_collapse(self) -> None:
@@ -151,6 +158,15 @@ class CollapsibleSidebar(ttk.Frame):
         if self.is_collapsed:
             self.toggle_collapse()
 
+    def set_operations_enabled(self, enabled: bool) -> None:
+        """Disable operation buttons while animation plays; re-enable when stopped."""
+        state = "normal" if enabled else "disabled"
+        for btn in self.operation_buttons:
+            try:
+                btn.configure(state=state)
+            except Exception:
+                pass
+
     # =========================================================================
     # BST Panel UI
     # =========================================================================
@@ -161,19 +177,23 @@ class CollapsibleSidebar(ttk.Frame):
 
         # Section: Create BST
         sec_create = self._create_section(panel, "Create BST")
-        # Random BST
+
+        # Random BST (Count 1..25, default 7)
         row_rnd = ttk.Frame(sec_create, style="Sidebar.TFrame")
         row_rnd.pack(fill=tk.X, pady=(2, 6))
         ttk.Label(row_rnd, text="Count N:", style="Panel.TLabel").pack(side=tk.LEFT)
         self.bst_count_entry = ttk.Entry(row_rnd, width=5)
         self.bst_count_entry.insert(0, "7")
         self.bst_count_entry.pack(side=tk.LEFT, padx=6)
-        ttk.Button(
+
+        btn_rnd = ttk.Button(
             row_rnd,
             text="Random",
             style="TButton",
             command=self._handle_bst_random,
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        )
+        btn_rnd.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        self.operation_buttons.append(btn_rnd)
 
         # Custom Array Load
         row_arr = ttk.Frame(sec_create, style="Sidebar.TFrame")
@@ -181,12 +201,15 @@ class CollapsibleSidebar(ttk.Frame):
         self.bst_array_entry = ttk.Entry(row_arr)
         self.bst_array_entry.insert(0, "50, 30, 70, 20")
         self.bst_array_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_load = ttk.Button(
             row_arr,
             text="Load",
             style="TButton",
             command=self._handle_bst_load_array,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_load.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_load)
 
         # Preset Dropdown
         row_preset = ttk.Frame(sec_create, style="Sidebar.TFrame")
@@ -198,7 +221,7 @@ class CollapsibleSidebar(ttk.Frame):
                 "1. Balanced BST (7 nodes)",
                 "2. Right-Skewed BST (5 nodes)",
                 "3. BST with Duplicates",
-                "4. Full & Perfect Tree",
+                "4. Full & Perfect Binary Tree",
             ],
             state="readonly",
         )
@@ -213,12 +236,15 @@ class CollapsibleSidebar(ttk.Frame):
         self.bst_insert_entry = ttk.Entry(row_ins)
         self.bst_insert_entry.insert(0, "45")
         self.bst_insert_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_ins = ttk.Button(
             row_ins,
             text="Insert",
             style="Primary.TButton",
             command=self._handle_bst_insert,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_ins.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_ins)
 
         # Section: Search & Remove
         sec_sr = self._create_section(panel, "Search & Remove")
@@ -227,41 +253,53 @@ class CollapsibleSidebar(ttk.Frame):
         self.bst_search_entry = ttk.Entry(row_search)
         self.bst_search_entry.insert(0, "50")
         self.bst_search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_search = ttk.Button(
             row_search,
             text="Search",
             style="TButton",
             command=self._handle_bst_search,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_search.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_search)
 
         row_remove = ttk.Frame(sec_sr, style="Sidebar.TFrame")
         row_remove.pack(fill=tk.X)
         self.bst_remove_entry = ttk.Entry(row_remove)
         self.bst_remove_entry.insert(0, "50")
         self.bst_remove_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_remove = ttk.Button(
             row_remove,
             text="Remove",
             style="Danger.TButton",
             command=self._handle_bst_remove,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_remove.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_remove)
 
         # Section: Min & Max
         sec_minmax = self._create_section(panel, "Min & Max")
         row_mm = ttk.Frame(sec_minmax, style="Sidebar.TFrame")
         row_mm.pack(fill=tk.X)
-        ttk.Button(
+
+        btn_min = ttk.Button(
             row_mm,
             text="Find Min",
             style="TButton",
             command=self._handle_bst_min,
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        ttk.Button(
+        )
+        btn_min.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.operation_buttons.append(btn_min)
+
+        btn_max = ttk.Button(
             row_mm,
             text="Find Max",
             style="TButton",
             command=self._handle_bst_max,
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        )
+        btn_max.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.operation_buttons.append(btn_max)
 
         # Section: Predecessor & Successor
         sec_ps = self._create_section(panel, "Predecessor & Successor")
@@ -270,18 +308,24 @@ class CollapsibleSidebar(ttk.Frame):
         self.bst_ps_entry.pack(fill=tk.X, pady=(0, 4))
         row_ps_btns = ttk.Frame(sec_ps, style="Sidebar.TFrame")
         row_ps_btns.pack(fill=tk.X)
-        ttk.Button(
+
+        btn_pred = ttk.Button(
             row_ps_btns,
             text="Predecessor",
             style="TButton",
             command=self._handle_bst_pred,
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        ttk.Button(
+        )
+        btn_pred.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.operation_buttons.append(btn_pred)
+
+        btn_succ = ttk.Button(
             row_ps_btns,
             text="Successor",
             style="TButton",
             command=self._handle_bst_succ,
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        )
+        btn_succ.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.operation_buttons.append(btn_succ)
 
         # Section: Rank & Select
         sec_rs = self._create_section(panel, "Rank & Select")
@@ -290,24 +334,30 @@ class CollapsibleSidebar(ttk.Frame):
         self.bst_rank_entry = ttk.Entry(row_rank)
         self.bst_rank_entry.insert(0, "50")
         self.bst_rank_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_rank = ttk.Button(
             row_rank,
             text="Rank",
             style="TButton",
             command=self._handle_bst_rank,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_rank.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_rank)
 
         row_sel = ttk.Frame(sec_rs, style="Sidebar.TFrame")
         row_sel.pack(fill=tk.X)
         self.bst_select_entry = ttk.Entry(row_sel)
         self.bst_select_entry.insert(0, "3")
         self.bst_select_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+
+        btn_select = ttk.Button(
             row_sel,
             text="Select (k)",
             style="TButton",
             command=self._handle_bst_select,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_select.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_select)
 
     # =========================================================================
     # Binary Tree Panel UI
@@ -326,29 +376,35 @@ class CollapsibleSidebar(ttk.Frame):
         self.bt_count_entry.insert(0, "6")
         self.bt_count_entry.pack(side=tk.LEFT, padx=6)
 
-        ttk.Button(
+        btn_rnd = ttk.Button(
             row_rnd,
             text="Random",
             style="TButton",
             command=self._handle_binary_random,
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        )
+        btn_rnd.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        self.operation_buttons.append(btn_rnd)
 
         row_lbl = ttk.Frame(sec_create, style="Sidebar.TFrame")
         row_lbl.pack(fill=tk.X, pady=(0, 6))
         ttk.Label(row_lbl, text="Labels:", style="Panel.TLabel").pack(side=tk.LEFT)
-        self.bt_label_type_var = tk.StringVar(value="numbers")
-        ttk.Radiobutton(
+        self.bt_label_type_var = tk.StringVar(value=self.initial_bt_label_type)
+        r_num = ttk.Radiobutton(
             row_lbl,
             text="Numbers",
             variable=self.bt_label_type_var,
             value="numbers",
-        ).pack(side=tk.LEFT, padx=(6, 4))
-        ttk.Radiobutton(
+            command=self._on_label_type_toggle,
+        )
+        r_num.pack(side=tk.LEFT, padx=(6, 4))
+        r_let = ttk.Radiobutton(
             row_lbl,
             text="Letters",
             variable=self.bt_label_type_var,
             value="letters",
-        ).pack(side=tk.LEFT)
+            command=self._on_label_type_toggle,
+        )
+        r_let.pack(side=tk.LEFT)
 
         # Level order load
         ttk.Label(
@@ -356,49 +412,76 @@ class CollapsibleSidebar(ttk.Frame):
             text="Level-order list (e.g. 1, 2, 3, null, 4):",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 2))
+
         row_load = ttk.Frame(sec_create, style="Sidebar.TFrame")
         row_load.pack(fill=tk.X)
         self.bt_level_entry = ttk.Entry(row_load)
         self.bt_level_entry.insert(0, "1, 2, 3, 4, 5, 6")
         self.bt_level_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 6))
-        ttk.Button(
+        self.bt_level_entry.bind("<KeyRelease>", lambda e: self._update_binary_hint())
+
+        btn_load = ttk.Button(
             row_load,
             text="Load",
             style="TButton",
             command=self._handle_binary_load,
-        ).pack(side=tk.RIGHT)
+        )
+        btn_load.pack(side=tk.RIGHT)
+        self.operation_buttons.append(btn_load)
+
+        # Hint note: "Interpreted as: ..."
+        self.bt_hint_label = ttk.Label(
+            sec_create,
+            text="Interpreted as: 1, 2, 3, 4, 5, 6",
+            style="Muted.TLabel",
+            font=get_ui_font(8, italic=True),
+            wraplength=self.PANEL_WIDTH - 40,
+        )
+        self.bt_hint_label.pack(anchor="w", pady=(2, 4))
 
         # Section: Traversals
         sec_trav = self._create_section(panel, "Traversals")
         t_row1 = ttk.Frame(sec_trav, style="Sidebar.TFrame")
         t_row1.pack(fill=tk.X, pady=(0, 4))
-        ttk.Button(
+
+        b_pre = ttk.Button(
             t_row1,
             text="Preorder",
             style="TButton",
             command=lambda: self._handle_traversal("pre"),
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        ttk.Button(
+        )
+        b_pre.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.operation_buttons.append(b_pre)
+
+        b_in = ttk.Button(
             t_row1,
             text="Inorder",
             style="TButton",
             command=lambda: self._handle_traversal("in"),
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        )
+        b_in.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.operation_buttons.append(b_in)
 
         t_row2 = ttk.Frame(sec_trav, style="Sidebar.TFrame")
         t_row2.pack(fill=tk.X)
-        ttk.Button(
+
+        b_post = ttk.Button(
             t_row2,
             text="Postorder",
             style="TButton",
             command=lambda: self._handle_traversal("post"),
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
-        ttk.Button(
+        )
+        b_post.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.operation_buttons.append(b_post)
+
+        b_lvl = ttk.Button(
             t_row2,
             text="Level Order",
             style="TButton",
             command=lambda: self._handle_traversal("level"),
-        ).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        )
+        b_lvl.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.operation_buttons.append(b_lvl)
 
         # Section: Tree Properties
         sec_props = self._create_section(panel, "Tree Properties")
@@ -420,6 +503,22 @@ class CollapsibleSidebar(ttk.Frame):
             lbl_val = ttk.Label(row, text="-", style="Panel.TLabel", font=get_ui_font(9, bold=True))
             lbl_val.pack(side=tk.RIGHT)
             self.props_labels[key] = lbl_val
+
+    def _on_label_type_toggle(self) -> None:
+        """Handle numeric/alphabetic radio toggle and notify listener."""
+        val = self.bt_label_type_var.get()
+        cb = self.callbacks.get("bt_label_type_changed")
+        if cb:
+            cb(val)
+
+    def _update_binary_hint(self) -> None:
+        """Update the 'Interpreted as: ...' hint dynamically as user types."""
+        raw = self.bt_level_entry.get().strip()
+        parsed = parse_level_order(raw)
+        if parsed.notes:
+            self.bt_hint_label.configure(text=parsed.notes[0])
+        else:
+            self.bt_hint_label.configure(text="")
 
     # =========================================================================
     # Build from Traversal Panel UI
@@ -467,12 +566,14 @@ class CollapsibleSidebar(ttk.Frame):
         self.build_seq1_entry = ttk.Entry(sec_seq)
         self.build_seq1_entry.insert(0, "D, B, E, A, F, C")
         self.build_seq1_entry.pack(fill=tk.X, pady=(0, 6))
+        self.build_seq1_entry.bind("<KeyRelease>", lambda e: self._diagnose_build_sequences())
 
         self.lbl_seq2 = ttk.Label(sec_seq, text="Preorder Sequence:", style="Panel.TLabel")
         self.lbl_seq2.pack(anchor="w", pady=(2, 1))
         self.build_seq2_entry = ttk.Entry(sec_seq)
         self.build_seq2_entry.insert(0, "A, B, D, E, C, F")
         self.build_seq2_entry.pack(fill=tk.X, pady=(0, 6))
+        self.build_seq2_entry.bind("<KeyRelease>", lambda e: self._diagnose_build_sequences())
 
         # Real-time suggestions/validation status
         self.validation_frame = ttk.Frame(sec_seq, style="Card.TFrame", padding=6)
@@ -489,21 +590,26 @@ class CollapsibleSidebar(ttk.Frame):
         row_actions = ttk.Frame(panel, style="Sidebar.TFrame")
         row_actions.pack(fill=tk.X, pady=(4, 4))
 
-        ttk.Button(
+        btn_build = ttk.Button(
             row_actions,
             text="Build & Animate",
             style="Primary.TButton",
             command=self._handle_build_animate,
-        ).pack(fill=tk.X, pady=(0, 4))
+        )
+        btn_build.pack(fill=tk.X, pady=(0, 4))
+        self.operation_buttons.append(btn_build)
 
         row_sub = ttk.Frame(panel, style="Sidebar.TFrame")
         row_sub.pack(fill=tk.X)
-        ttk.Button(
+
+        btn_rand_pair = ttk.Button(
             row_sub,
             text="Random Pair",
             style="TButton",
             command=self._handle_build_random,
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        )
+        btn_rand_pair.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.operation_buttons.append(btn_rand_pair)
 
         self.build_label_cb = ttk.Combobox(
             row_sub,
@@ -514,12 +620,19 @@ class CollapsibleSidebar(ttk.Frame):
         self.build_label_cb.current(0)
         self.build_label_cb.pack(side=tk.RIGHT, padx=(3, 0))
 
+    def _diagnose_build_sequences(self) -> None:
+        """Run real-time diagnostics on current sequence pair."""
+        mode = self._get_build_mode_key()
+        s1 = self.build_seq1_entry.get().strip()
+        s2 = self.build_seq2_entry.get().strip() if mode not in ("bst-pre", "bst-post") else None
+        diag = diagnose_sequences(mode, s1, s2)
+        self.lbl_val_msg.configure(text=diag.message)
+
     # =========================================================================
     # Helpers & Handlers
     # =========================================================================
 
     def _create_section(self, parent: ttk.Frame, title: str) -> ttk.Frame:
-        """Create a styled group section with header."""
         frame = ttk.Frame(parent, style="Sidebar.TFrame", padding=(0, 6))
         frame.pack(fill=tk.X)
 
@@ -552,6 +665,7 @@ class CollapsibleSidebar(ttk.Frame):
         if cb:
             try:
                 n = int(self.bst_count_entry.get().strip())
+                n = max(1, min(25, n))
             except ValueError:
                 n = 7
             cb(n)
@@ -568,6 +682,8 @@ class CollapsibleSidebar(ttk.Frame):
             cb = self.callbacks.get("load_preset")
             if cb:
                 cb(preset_ids[idx])
+        # Reset combobox to prompt title
+        self.bst_preset_cb.current(0)
 
     def _handle_bst_insert(self) -> None:
         cb = self.callbacks.get("bst_insert")
@@ -621,16 +737,21 @@ class CollapsibleSidebar(ttk.Frame):
     def _handle_binary_random(self) -> None:
         cb = self.callbacks.get("binary_random")
         if cb:
+            label_type = self.bt_label_type_var.get()
             try:
                 n = int(self.bt_count_entry.get().strip())
+                max_n = 26 if label_type == "letters" else 30
+                n = max(1, min(max_n, n))
             except ValueError:
                 n = 6
-            cb(n, self.bt_label_type_var.get())
+            cb(n, label_type)
 
     def _handle_binary_load(self) -> None:
         cb = self.callbacks.get("binary_load_level_order")
         if cb:
-            cb(self.bt_level_entry.get().strip())
+            raw = self.bt_level_entry.get().strip()
+            self._update_binary_hint()
+            cb(raw)
 
     def _handle_traversal(self, order: str) -> None:
         cb = self.callbacks.get("run_traversal")
@@ -657,6 +778,8 @@ class CollapsibleSidebar(ttk.Frame):
             self.lbl_seq2.pack(anchor="w", pady=(2, 1))
             self.build_seq2_entry.pack(fill=tk.X, pady=(0, 6))
 
+        self._diagnose_build_sequences()
+
     def _handle_build_animate(self) -> None:
         cb = self.callbacks.get("build_reconstruct")
         if cb:
@@ -670,4 +793,10 @@ class CollapsibleSidebar(ttk.Frame):
         if cb:
             mode = self._get_build_mode_key()
             label_type = "letters" if self.build_label_cb.get() == "Letters" else "numbers"
-            cb(mode, label_type)
+            s1, s2 = cb(mode, label_type)
+            self.build_seq1_entry.delete(0, tk.END)
+            self.build_seq1_entry.insert(0, s1)
+            if s2 is not None:
+                self.build_seq2_entry.delete(0, tk.END)
+                self.build_seq2_entry.insert(0, s2)
+            self._diagnose_build_sequences()

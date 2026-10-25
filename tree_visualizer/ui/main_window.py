@@ -132,6 +132,7 @@ class MainWindow:
             self.center_frame,
             theme_manager=self.theme_manager,
             on_collapse_toggled=self._on_sidebar_collapse_toggled,
+            initial_bt_label_type=self.controller.settings.bt_label_type,
         )
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
 
@@ -165,7 +166,14 @@ class MainWindow:
             "binary_load_level_order": c.binary_load_level_order,
             "run_traversal": c.run_traversal,
             "build_reconstruct": c.build_reconstruct,
+            "build_random": c.build_random,
+            "bt_label_type_changed": self._on_bt_label_type_changed,
         })
+
+    def _on_bt_label_type_changed(self, label_type: str) -> None:
+        """Persist selected label type choice in user settings."""
+        self.controller.settings.bt_label_type = label_type
+        self.controller.settings.save()
 
     def _bind_controller_and_player(self) -> None:
         """Connect observers from Controller and Player to UI presentation."""
@@ -188,6 +196,16 @@ class MainWindow:
 
         # Player frame updates
         c.player.add_step_listener(self._on_player_step_changed)
+        c.player.add_play_state_listener(self._on_play_state_changed)
+
+    def _on_play_state_changed(self, is_playing: bool) -> None:
+        """Disable operation buttons while animation plays; re-enable when stopped."""
+        self.sidebar.set_operations_enabled(not is_playing)
+        self.top_bar.btn_clear.configure(state="disabled" if is_playing else "normal")
+        if is_playing:
+            self.top_bar.btn_undo.configure(state="disabled")
+        else:
+            self.top_bar.set_undo_enabled(self.controller.can_undo)
 
     def _on_tree_changed(self, tab: str, tree: Optional[TreeNode]) -> None:
         """Handle tree modification in controller."""
@@ -324,6 +342,12 @@ class MainWindow:
         if hasattr(self, "_after_id") and self._after_id:
             try:
                 self.root.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+        if hasattr(self, "canvas_view") and self.canvas_view:
+            try:
+                self.canvas_view.destroy()
             except Exception:
                 pass
         try:

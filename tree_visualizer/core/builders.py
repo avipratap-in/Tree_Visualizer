@@ -205,11 +205,17 @@ def build_from_preorder_postorder(
         post_start: int,
         post_end: int,
     ) -> TreeNode:
+        if pre_start > pre_end or post_start > post_end:
+            raise TreeBuildError("Preorder and postorder sequences do not match a valid tree.")
+
         root_val = preorder[pre_start]
         root = TreeNode(root_val)
 
         if pre_start == pre_end:
             return root
+
+        if pre_start + 1 > pre_end or post_end - 1 < post_start:
+            raise TreeBuildError("Invalid preorder and postorder subtree boundaries.")
 
         # Next value in preorder is the root of the left subtree
         left_val = preorder[pre_start + 1]
@@ -224,8 +230,13 @@ def build_from_preorder_postorder(
                 f"Preorder + Postorder requires a full binary tree."
             )
 
-        left_post_idx = post_map[left_val]
+        left_post_idx = post_map.get(left_val)
+        if left_post_idx is None or left_post_idx < post_start or left_post_idx >= post_end:
+            raise TreeBuildError("Preorder and postorder sequences do not represent a valid full binary tree.")
+
         left_size = left_post_idx - post_start + 1
+        if pre_start + left_size > pre_end:
+            raise TreeBuildError("Preorder and postorder subtree size mismatch.")
 
         root.left = _build(
             pre_start + 1,
