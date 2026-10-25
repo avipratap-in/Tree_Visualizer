@@ -1,14 +1,15 @@
-"""Central interactive canvas viewport.
+"""Central interactive canvas viewport with smooth pan, zoom, tweening, and overlays.
 
 Renders:
-- Deterministic, collision-free binary tree visualization with pan and zoom.
-- Definition cards in cursive Rouge Script when the active tree is empty.
-- Overlaid floating controls:
-  - Top-left stats badge: [N=.., h=..]
-  - Top-right zoom controls: [+ | 100% | - | ⟲]
-  - Top-center visited sequence banner: Visited: [ ... ]
-  - Bottom-right VisuAlgo status card and pseudocode panel
-  - Left edge toggle button: [☰ Operations] when sidebar is collapsed
+- Deterministic tree layout computed via ui/layout.py.
+- Animated ~150 ms tweening of node positions between algorithm steps.
+- Edges drawn first, followed by node circles and frequency labels.
+- Adaptive font sizing for longer labels to ensure text fits inside circles.
+- Smooth mouse wheel zooming toward cursor with cross-platform delta normalization:
+    scale *= exp(-delta * 0.0008), clamped per event.
+- Animated smooth reset back to default scale (1.0) and origin (0, 0).
+- Empty-state definition cards rendered in Rouge Script that never block pan/zoom.
+- Floating overlay panels: stats badge, zoom controls, visited banner, status box, pseudocode panel.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import math
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
 from tree_visualizer.core.node import TreeNode
 from tree_visualizer.core.properties import height as compute_height, size as compute_size
 from tree_visualizer.recorder.steps import Step
@@ -24,22 +26,25 @@ from tree_visualizer.ui.fonts import (
     get_definition_title_font,
     get_ui_font,
 )
+from tree_visualizer.ui.layout import (
+    CANVAS_HEIGHT,
+    CANVAS_WIDTH,
+    NodeLayout,
+    TreeLayoutResult,
+    compute_tree_layout,
+)
 from tree_visualizer.ui.overlays import PseudocodePanel, StatusBox
 from tree_visualizer.ui.theme import ThemeManager
 
 
 class CanvasView(tk.Frame):
-    """Central canvas container with pan/zoom math and floating overlay panels."""
-
-    LOGICAL_WIDTH: float = 900.0
-    LOGICAL_HEIGHT: float = 500.0
-    MARGIN_X: float = 60.0
-    MARGIN_Y: float = 60.0
-    NODE_RADIUS: float = 20.0
+    """Interactive tree visualization viewport supporting pan/zoom, tweening, and overlays."""
 
     BUTTON_STEP: float = 1.1
     MIN_SCALE: float = 0.3
     MAX_SCALE: float = 3.0
+    TWEEN_DURATION_MS: int = 150
+    TWEEN_STEPS: int = 10
 
     DEFINITION_TEXTS: Dict[str, Dict[str, str]] = {
         "binary": {
@@ -93,10 +98,19 @@ class CanvasView(tk.Frame):
         self._drag_start_x: float = 0.0
         self._drag_start_y: float = 0.0
 
-        # Current view data
+        # Animation & Tweening state
+        self._animating_reset: bool = False
+        self._reset_after_id: Optional[str] = None
+        self._tween_after_id: Optional[str] = None
+        self._tween_progress: float = 1.0
+        self._prev_node_coords: Dict[str, Tuple[float, float]] = {}
+        self._curr_node_coords: Dict[str, Tuple[float, float]] = {}
+
+        # Active data
         self.active_tab: str = "bst"
         self.current_step: Optional[Step] = None
         self.current_tree: Optional[TreeNode] = None
+        self._layout_result: Optional[TreeLayoutResult] = None
 
         self._build_ui()
         self.theme_manager.register_listener(self.on_theme_updated)
@@ -104,7 +118,7 @@ class CanvasView(tk.Frame):
     def _build_ui(self) -> None:
         t = self.theme_manager.current
 
-        # Main Tkinter Canvas
+        # Central Canvas
         self.canvas = tk.Canvas(
             self,
             bg=t["canvas_bg"],
@@ -113,10 +127,12 @@ class CanvasView(tk.Frame):
         )
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Pan & Zoom bindings
+        # Mouse & gesture bindings for pan and zoom
         self.canvas.bind("<ButtonPress-1>", self._on_drag_start)
         self.canvas.bind("<B1-Motion>", self._on_drag_motion)
         self.canvas.bind("<MouseWheel>", self._on_mouse_wheel)
+        self.canvas.bind("<Button-4>", self._on_mouse_wheel)  # Linux scroll up
+        self.canvas.bind("<Button-5>", self._on_mouse_wheel)  # Linux scroll down
         self.canvas.bind("<Configure>", lambda e: self.redraw())
 
         # -------------------------------------------------------------
@@ -191,7 +207,7 @@ class CanvasView(tk.Frame):
             text="⟲",
             width=2,
             style="Action.TButton",
-            command=self.reset_view,
+            command=self.animated_reset_view,
         )
         self.btn_zoom_reset.pack(side=tk.LEFT, padx=1)
 
@@ -241,25 +257,48 @@ class CanvasView(tk.Frame):
         self.redraw()
 
     def _on_mouse_wheel(self, event: tk.Event) -> None:
-        factor = self.BUTTON_STEP if event.delta > 0 else (1.0 / self.BUTTON_STEP)
+        """Gentle mouse wheel zoom toward cursor with cross-platform delta normalization."""
+        raw_delta = getattr(event, "delta", 0)
+        if raw_delta == 0:
+            num = getattr(event, "num", None)
+            if num == 4:
+                delta = 120.0
+            elif num == 5:
+                delta = -120.0
+            else:
+                delta = 0.0
+        else:
+            if abs(raw_delta) < 10:
+                delta = raw_delta * 120.0
+            else:
+                delta = float(raw_delta)
+
+        # Clamp delta per event to [-240, 240]
+        delta = max(-240.0, min(240.0, delta))
+
+        # Gentle zoom formula: scale *= exp(-deltaY * 0.0008)
+        # Windows positive delta is zoom in, corresponding to negative deltaY in web
+        factor = math.exp(delta * 0.0008)
         self._apply_zoom(factor, event.x, event.y)
 
     def zoom_in(self) -> None:
+        """Zoom in by 1.1x toward canvas center."""
         cx = self.canvas.winfo_width() / 2.0
         cy = self.canvas.winfo_height() / 2.0
         self._apply_zoom(self.BUTTON_STEP, cx, cy)
 
     def zoom_out(self) -> None:
+        """Zoom out by 1/1.1x toward canvas center."""
         cx = self.canvas.winfo_width() / 2.0
         cy = self.canvas.winfo_height() / 2.0
         self._apply_zoom(1.0 / self.BUTTON_STEP, cx, cy)
 
     def _apply_zoom(self, factor: float, cx: float, cy: float) -> None:
+        """Apply zoom factor centered around target cursor (cx, cy)."""
         new_scale = max(self.MIN_SCALE, min(self.scale * factor, self.MAX_SCALE))
         if new_scale == self.scale:
             return
 
-        # Zoom centered on cursor position (cx, cy)
         ratio = new_scale / self.scale
         self.pan_x = cx - ratio * (cx - self.pan_x)
         self.pan_y = cy - ratio * (cy - self.pan_y)
@@ -268,15 +307,55 @@ class CanvasView(tk.Frame):
         self.redraw()
 
     def reset_view(self) -> None:
-        """Reset pan and zoom to default scale 1.0 and origin."""
+        """Instantly reset pan and zoom to scale 1.0 and origin."""
+        if self._reset_after_id:
+            try:
+                self.after_cancel(self._reset_after_id)
+            except Exception:
+                pass
+            self._reset_after_id = None
         self.scale = 1.0
         self.pan_x = 0.0
         self.pan_y = 0.0
         self.lbl_zoom.configure(text="100%")
         self.redraw()
 
+    def animated_reset_view(self) -> None:
+        """Smoothly tween scale to 1.0 and pan to (0, 0) over ~150 ms."""
+        if self._reset_after_id:
+            try:
+                self.after_cancel(self._reset_after_id)
+            except Exception:
+                pass
+
+        start_scale = self.scale
+        start_pan_x = self.pan_x
+        start_pan_y = self.pan_y
+        total_steps = 10
+        interval_ms = 15
+
+        def _step(step_idx: int) -> None:
+            if not self.winfo_exists():
+                return
+            t = step_idx / float(total_steps)
+            ease = 1.0 - (1.0 - t) ** 2  # quadratic ease-out
+
+            self.scale = start_scale + ease * (1.0 - start_scale)
+            self.pan_x = start_pan_x + ease * (0.0 - start_pan_x)
+            self.pan_y = start_pan_y + ease * (0.0 - start_pan_y)
+            self.lbl_zoom.configure(text=f"{int(round(self.scale * 100))}%")
+            self.redraw()
+
+            if step_idx < total_steps:
+                self._reset_after_id = self.after(interval_ms, lambda: _step(step_idx + 1))
+            else:
+                self._reset_after_id = None
+                self.reset_view()
+
+        _step(1)
+
     def set_sidebar_collapsed(self, is_collapsed: bool) -> None:
-        """Show or hide the ☰ Operations button based on sidebar collapse state."""
+        """Display ☰ Operations button when sidebar is collapsed."""
         if is_collapsed:
             self.canvas.create_window(12, 12, window=self.btn_open_sidebar, anchor="nw", tags="overlay")
         else:
@@ -288,7 +367,7 @@ class CanvasView(tk.Frame):
             self.on_expand_sidebar()
 
     # =========================================================================
-    # Drawing Pipeline
+    # Step Tweening & State Updates
     # =========================================================================
 
     def set_tab(self, tab: str) -> None:
@@ -297,21 +376,78 @@ class CanvasView(tk.Frame):
         self.redraw()
 
     def set_tree(self, tree: Optional[TreeNode]) -> None:
-        """Set current tree model directly."""
+        """Set current tree and trigger layout calculation without step tween."""
         self.current_tree = tree
         self.current_step = None
+        self._prev_node_coords = {}
+        self._tween_progress = 1.0
+        self._update_layout()
         self.redraw()
 
     def set_step(self, step: Optional[Step]) -> None:
-        """Render an algorithm animation Step."""
+        """Render algorithm Step with ~150 ms tweening between node positions."""
         self.current_step = step
+        new_tree = step.tree_root if step is not None else None
+
+        # Cancel any active tween
+        if self._tween_after_id:
+            try:
+                self.after_cancel(self._tween_after_id)
+            except Exception:
+                pass
+            self._tween_after_id = None
+
+        # Capture previous coordinates
+        if self._layout_result:
+            self._prev_node_coords = {
+                nid: (n.x, n.y) for nid, n in self._layout_result.nodes.items()
+            }
+        else:
+            self._prev_node_coords = {}
+
+        self.current_tree = new_tree
+        self._update_layout()
+
+        # Update overlay messages
         if step is not None:
-            self.current_tree = step.tree_root
             if step.message:
                 self.status_box.set_message(step.message)
             if step.pseudo_line is not None:
                 self.pseudocode_panel.highlight_line(step.pseudo_line)
-        self.redraw()
+
+        # Trigger smooth ~150ms position tween if nodes moved
+        if self._prev_node_coords and self._layout_result and self._layout_result.nodes:
+            self._start_node_tween()
+        else:
+            self._tween_progress = 1.0
+            self.redraw()
+
+    def _update_layout(self) -> None:
+        """Recalculate pure tree layout coordinates using ui.layout."""
+        if self.current_tree is None:
+            self._layout_result = None
+        else:
+            self._layout_result = compute_tree_layout(self.current_tree)
+
+    def _start_node_tween(self) -> None:
+        """Start ~150 ms tween of node positions."""
+        interval_ms = max(10, self.TWEEN_DURATION_MS // self.TWEEN_STEPS)
+        step_delta = 1.0 / float(self.TWEEN_STEPS)
+
+        def _step_anim(current_t: float) -> None:
+            if not self.winfo_exists():
+                return
+            self._tween_progress = min(1.0, current_t)
+            self.redraw()
+            if self._tween_progress < 1.0:
+                self._tween_after_id = self.after(
+                    interval_ms,
+                    lambda: _step_anim(current_t + step_delta),
+                )
+            else:
+                self._tween_after_id = None
+
+        _step_anim(step_delta)
 
     def set_pseudocode(self, lines: List[str], active_idx: Optional[int] = None) -> None:
         """Update pseudocode lines on the overlay."""
@@ -321,8 +457,12 @@ class CanvasView(tk.Frame):
         else:
             self.pseudocode_panel.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
 
+    # =========================================================================
+    # Drawing Pipeline
+    # =========================================================================
+
     def redraw(self) -> None:
-        """Redraw all canvas elements, trees, and floating overlays."""
+        """Redraw all canvas elements, edges, nodes, and floating overlays."""
         self.canvas.delete("all")
         t = self.theme_manager.current
 
@@ -332,14 +472,11 @@ class CanvasView(tk.Frame):
             return
 
         # Position Floating Overlays
-        # 1. Stats Badge (Top Left, or offset if sidebar toggle is present)
         stats_x = 120 if self.btn_open_sidebar.winfo_ismapped() else 12
         self.canvas.create_window(stats_x, 12, window=self.stats_frame, anchor="nw", tags="overlay")
-
-        # 2. Zoom Controls (Top Right)
         self.canvas.create_window(w - 12, 12, window=self.zoom_frame, anchor="ne", tags="overlay")
 
-        # 3. Visited Banner (Top Center)
+        # Visited Banner (Top Center)
         visited = self.current_step.visited if (self.current_step and self.current_step.visited) else []
         if visited:
             vis_str = ", ".join(str(v) for v in visited)
@@ -348,7 +485,7 @@ class CanvasView(tk.Frame):
         else:
             self.visited_banner.place_forget()
 
-        # 4. Status & Pseudocode Overlays (Bottom Right)
+        # Status & Pseudocode Overlays (Bottom Right)
         self.canvas.create_window(w - 16, h - 16, window=self.overlay_container, anchor="se", tags="overlay")
 
         # Update stats badge
@@ -357,22 +494,25 @@ class CanvasView(tk.Frame):
         tree_h = compute_height(tree_root)
         self.lbl_stats.configure(text=f"N={n}, h={tree_h}")
 
-        # Render Tree or Empty Definition Card
-        if tree_root is None:
+        # Render Tree or Definition Card
+        if tree_root is None or self._layout_result is None or self._layout_result.node_count == 0:
             self._draw_definition_card(w, h)
         else:
-            self._draw_tree(tree_root, w, h)
+            self._draw_tree_layout(self._layout_result, w, h)
 
     def _draw_definition_card(self, w: float, h: float) -> None:
-        """Render empty-state academic definition card in cursive Rouge Script."""
+        """Render empty-state academic definition card in cursive Rouge Script.
+
+        Drawn directly onto canvas background so pan/zoom gestures work seamlessly over it.
+        """
         t = self.theme_manager.current
         card_info = self.DEFINITION_TEXTS.get(self.active_tab, self.DEFINITION_TEXTS["bst"])
 
         cx = w / 2.0 + self.pan_x
-        cy = h / 2.0 + self.pan_y - 30
+        cy = h / 2.0 + self.pan_y - 25
 
         # Title in Rouge Script
-        title_font = get_definition_title_font(int(28 * self.scale))
+        title_font = get_definition_title_font(int(round(28 * self.scale)))
         self.canvas.create_text(
             cx,
             cy - 50 * self.scale,
@@ -380,10 +520,11 @@ class CanvasView(tk.Frame):
             font=title_font,
             fill=t["accent"],
             justify=tk.CENTER,
+            tags="definition_card",
         )
 
-        # Body in Rouge Script
-        body_font = get_definition_body_font(int(17 * self.scale))
+        # Narrative body in Rouge Script
+        body_font = get_definition_body_font(int(round(17 * self.scale)))
         max_width = min(680 * self.scale, w * 0.85)
         self.canvas.create_text(
             cx,
@@ -393,10 +534,11 @@ class CanvasView(tk.Frame):
             fill=t["text_muted"],
             width=max_width,
             justify=tk.CENTER,
+            tags="definition_card",
         )
 
-        # Actionable hint
-        hint_font = get_ui_font(max(8, int(10 * self.scale)), italic=True)
+        # Actionable hint line
+        hint_font = get_ui_font(max(8, int(round(10 * self.scale))), italic=True)
         self.canvas.create_text(
             cx,
             cy + 95 * self.scale,
@@ -404,45 +546,35 @@ class CanvasView(tk.Frame):
             font=hint_font,
             fill=t["text_muted"],
             justify=tk.CENTER,
+            tags="definition_card",
         )
 
-    def _draw_tree(self, root: TreeNode, w: float, h: float) -> None:
-        """Calculate coordinates and render tree nodes and edges."""
+    def _draw_tree_layout(self, layout: TreeLayoutResult, w: float, h: float) -> None:
+        """Render edges and nodes using layout result and active step highlights."""
         t = self.theme_manager.current
 
-        # 1. Inorder sequence indexing
-        inorder_nodes: List[TreeNode] = []
-        depths: Dict[str, int] = {}
+        # Compute interpolated positions for tweening
+        tween_t = self._tween_progress
+        ease = 1.0 - (1.0 - tween_t) ** 2  # smooth ease-out
 
-        def _traverse(node: Optional[TreeNode], depth: int) -> None:
-            if node is None:
-                return
-            depths[node.node_id] = depth
-            _traverse(node.left, depth + 1)
-            inorder_nodes.append(node)
-            _traverse(node.right, depth + 1)
-
-        _traverse(root, depth=0)
-        n = len(inorder_nodes)
-        d_max = max(depths.values()) if depths else 0
-
-        # 2. Coordinate calculations matching SPEC section 4
-        usable_w = self.LOGICAL_WIDTH - 2 * self.MARGIN_X
-        if d_max == 0:
-            level_h = 0.0
-        else:
-            level_h = min(85.0, (self.LOGICAL_HEIGHT - 2 * self.MARGIN_Y) / d_max)
-
-        coords: Dict[str, Tuple[float, float]] = {}
-        for idx, node in enumerate(inorder_nodes):
-            if n == 1:
-                lx = self.LOGICAL_WIDTH / 2.0
+        interpolated_coords: Dict[str, Tuple[float, float]] = {}
+        for nid, nlayout in layout.nodes.items():
+            curr_x, curr_y = nlayout.x, nlayout.y
+            if nid in self._prev_node_coords and tween_t < 1.0:
+                prev_x, prev_y = self._prev_node_coords[nid]
+                ix = prev_x + ease * (curr_x - prev_x)
+                iy = prev_y + ease * (curr_y - prev_y)
             else:
-                lx = self.MARGIN_X + (idx / float(n - 1)) * usable_w
-            ly = self.MARGIN_Y + depths[node.node_id] * level_h
-            coords[node.node_id] = (lx, ly)
+                ix, iy = curr_x, curr_y
+            interpolated_coords[nid] = (ix, iy)
 
-        # Highlight sets from current step
+        # Transform logical coords to view coords
+        def _to_view(lx: float, ly: float) -> Tuple[float, float]:
+            vx = lx * self.scale + self.pan_x
+            vy = ly * self.scale + self.pan_y
+            return vx, vy
+
+        # Highlight sets from active step
         highlight_nodes: Set[str] = set()
         visited_nodes: Set[str] = set()
         highlight_edges: Set[Tuple[str, str]] = set()
@@ -452,43 +584,34 @@ class CanvasView(tk.Frame):
             visited_nodes = {str(v) for v in self.current_step.visited}
             highlight_edges = set(self.current_step.highlight_edges)
 
-        # Transform logical coords to canvas view coords
-        def _to_view(lx: float, ly: float) -> Tuple[float, float]:
-            vx = lx * self.scale + self.pan_x
-            vy = ly * self.scale + self.pan_y
-            return vx, vy
+        # 1. Draw Edges first (underneath nodes)
+        for edge in layout.edges:
+            p_id = edge.parent_id
+            c_id = edge.child_id
+            if p_id in interpolated_coords and c_id in interpolated_coords:
+                px, py = _to_view(*interpolated_coords[p_id])
+                cx, cy = _to_view(*interpolated_coords[c_id])
 
-        # 3. Draw Edges first (underneath nodes)
-        def _draw_edges(node: Optional[TreeNode]) -> None:
-            if node is None:
-                return
-            p_id = node.node_id
-            px, py = _to_view(*coords[p_id])
+                is_edge_hl = (p_id, c_id) in highlight_edges or (c_id, p_id) in highlight_edges
+                edge_color = t["edge_highlight"] if is_edge_hl else t["edge_default"]
+                edge_width = max(1, int(round(3 * self.scale if is_edge_hl else 2 * self.scale)))
 
-            for child in (node.left, node.right):
-                if child is not None:
-                    c_id = child.node_id
-                    cx, cy = _to_view(*coords[c_id])
-                    is_edge_hl = (p_id, c_id) in highlight_edges or (c_id, p_id) in highlight_edges
-                    edge_color = t["edge_highlight"] if is_edge_hl else t["edge_default"]
-                    edge_width = max(1, int(3 * self.scale if is_edge_hl else 2 * self.scale))
+                self.canvas.create_line(
+                    px, py, cx, cy,
+                    fill=edge_color,
+                    width=edge_width,
+                    tags="edge",
+                )
 
-                    self.canvas.create_line(
-                        px, py, cx, cy,
-                        fill=edge_color,
-                        width=edge_width,
-                    )
-                    _draw_edges(child)
+        # 2. Draw Nodes
+        base_radius = layout.nodes[list(layout.nodes.keys())[0]].radius if layout.nodes else 20.0
+        r = base_radius * self.scale
 
-        _draw_edges(root)
+        for nid, nlayout in layout.nodes.items():
+            vx, vy = _to_view(*interpolated_coords[nid])
 
-        # 4. Draw Nodes
-        r = self.NODE_RADIUS * self.scale
-        for node in inorder_nodes:
-            vx, vy = _to_view(*coords[node.node_id])
-
-            is_hl = node.node_id in highlight_nodes or str(node.val) in highlight_nodes
-            is_vis = str(node.val) in visited_nodes
+            is_hl = nid in highlight_nodes or str(nlayout.val) in highlight_nodes
+            is_vis = str(nlayout.val) in visited_nodes
 
             if is_hl:
                 fill_col = t["node_highlight"]
@@ -497,23 +620,36 @@ class CanvasView(tk.Frame):
             else:
                 fill_col = t["node_default"]
 
-            stroke_w = max(1, int(2 * self.scale))
+            stroke_w = max(1, int(round(2 * self.scale)))
             self.canvas.create_oval(
                 vx - r, vy - r, vx + r, vy + r,
                 fill=fill_col,
                 outline=t["node_stroke"],
                 width=stroke_w,
+                tags=("node", nid),
             )
 
-            # Node label text: "val" or "val-freq"
-            label_text = f"{node.val}-{node.freq}" if node.freq > 1 else f"{node.val}"
-            font_size = max(7, int(10 * self.scale))
+            # Adaptive font sizing: long labels shrink the font to fit node circle
+            label_text = nlayout.label_text
+            label_len = len(label_text)
+            if label_len <= 2:
+                base_font_size = 11
+            elif label_len == 3:
+                base_font_size = 9
+            elif label_len == 4:
+                base_font_size = 8
+            else:
+                base_font_size = 7
+
+            font_size = max(6, int(round(base_font_size * self.scale)))
             font = get_ui_font(font_size, bold=True)
+
             self.canvas.create_text(
                 vx, vy,
                 text=label_text,
                 fill=t["node_text"],
                 font=font,
+                tags=("node_text", nid),
             )
 
     def on_theme_updated(self, theme: Dict[str, str]) -> None:
