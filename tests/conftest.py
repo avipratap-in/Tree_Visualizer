@@ -6,6 +6,20 @@ import sys
 import pytest
 
 
+# Ensure Windows CI runner finds tcl and tk libraries correctly
+if sys.platform.startswith("win"):
+    base_prefix = getattr(sys, "base_prefix", sys.prefix)
+    tcl_root = os.path.join(base_prefix, "tcl")
+    if os.path.isdir(tcl_root):
+        for item in os.listdir(tcl_root):
+            full = os.path.join(tcl_root, item)
+            if os.path.isdir(full):
+                if item.startswith("tcl") and "TCL_LIBRARY" not in os.environ:
+                    os.environ["TCL_LIBRARY"] = full
+                elif item.startswith("tk") and "TK_LIBRARY" not in os.environ:
+                    os.environ["TK_LIBRARY"] = full
+
+
 def has_display() -> bool:
     """Check if a graphical display environment is available for Tkinter GUI tests."""
     if sys.platform.startswith("win"):

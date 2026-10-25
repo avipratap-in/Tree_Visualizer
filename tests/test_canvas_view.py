@@ -40,7 +40,10 @@ def test_canvas_zoom_in_out():
 @requires_display
 def test_canvas_wheel_zoom_normalization():
     """Verify mouse wheel delta normalization across platforms with 20% decreased sensitivity."""
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"Tk initialization failed in runner: {e}")
     tm = ThemeManager(root)
     cv = CanvasView(root, theme_manager=tm)
     cv.pack(fill=tk.BOTH, expand=True)
