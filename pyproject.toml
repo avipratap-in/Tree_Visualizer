@@ -23,10 +23,12 @@ classifiers = [
 ]
 dependencies = [
     "pillow>=10.0.0",
-    "tkextrafont>=0.2.0; sys_platform != 'win32'",
 ]
 
 [project.optional-dependencies]
+fonts = [
+    "tkextrafont>=0.2.0; sys_platform != 'win32'",
+]
 dev = [
     "pytest>=8.0.0",
     "pyinstaller>=6.0.0",

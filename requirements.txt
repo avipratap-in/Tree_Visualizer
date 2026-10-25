@@ -1,3 +1,1 @@
 pillow>=10.0.0
-# tkextrafont is used for loading custom TrueType fonts on non-Windows platforms (Linux/macOS)
-tkextrafont>=0.2.0; sys_platform != 'win32'
