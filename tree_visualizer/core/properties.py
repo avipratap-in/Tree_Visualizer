@@ -164,6 +164,7 @@ def compute_properties(root: Optional[TreeNode]) -> Dict[str, Any]:
     Space Complexity: O(n)
     """
     return {
+        "size": size(root),
         "leaves": leaf_count(root),
         "internal": internal_node_count(root),
         "height": height(root),

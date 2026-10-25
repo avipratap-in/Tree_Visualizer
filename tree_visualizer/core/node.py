@@ -109,6 +109,18 @@ class TreeNode:
         """Return True if this node has no children."""
         return self.left is None and self.right is None
 
+    def size(self) -> int:
+        """Return total number of nodes in this subtree."""
+        left_size = self.left.size() if self.left is not None else 0
+        right_size = self.right.size() if self.right is not None else 0
+        return 1 + left_size + right_size
+
+    def height(self) -> int:
+        """Return height of this subtree (1 for single node)."""
+        left_h = self.left.height() if self.left is not None else 0
+        right_h = self.right.height() if self.right is not None else 0
+        return 1 + max(left_h, right_h)
+
     def __eq__(self, other: Any) -> bool:
         """Structural and value equality comparison."""
         if not isinstance(other, TreeNode):
