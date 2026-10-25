@@ -71,22 +71,39 @@ def generate_tree_icon(size: int = 256) -> Image.Image:
 
 
 def save_app_icons(assets_dir: Optional[str] = None) -> Tuple[str, str]:
-    """Generate and save icon.png and icon.ico in the assets folder."""
+    """Generate and save icon.png and icon.ico in the assets folder, or locate existing."""
     if assets_dir is None:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        assets_dir = os.path.join(base_dir, "assets")
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            for rel in [
+                os.path.join("tree_visualizer", "assets"),
+                "assets",
+            ]:
+                cand = os.path.join(sys._MEIPASS, rel)
+                if os.path.exists(cand):
+                    assets_dir = cand
+                    break
+        if assets_dir is None:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            assets_dir = os.path.join(base_dir, "assets")
 
     os.makedirs(assets_dir, exist_ok=True)
     png_path = os.path.join(assets_dir, "icon.png")
     ico_path = os.path.join(assets_dir, "icon.ico")
 
-    # Generate master 256x256 image
-    master_img = generate_tree_icon(size=256)
-    master_img.save(png_path, format="PNG")
+    # If icons already exist, avoid unnecessary regeneration
+    if os.path.exists(png_path) and os.path.exists(ico_path):
+        return png_path, ico_path
 
-    # Multi-resolution ICO
-    icon_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    master_img.save(ico_path, format="ICO", sizes=icon_sizes)
+    try:
+        # Generate master 256x256 image
+        master_img = generate_tree_icon(size=256)
+        master_img.save(png_path, format="PNG")
+
+        # Multi-resolution ICO
+        icon_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+        master_img.save(ico_path, format="ICO", sizes=icon_sizes)
+    except Exception:
+        pass
 
     return png_path, ico_path
 

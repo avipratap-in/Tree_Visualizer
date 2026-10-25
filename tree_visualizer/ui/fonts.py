@@ -26,6 +26,15 @@ FR_PRIVATE = 0x10
 
 def get_assets_font_path() -> str:
     """Return the absolute path to RougeScript-Regular.ttf."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        for rel in [
+            os.path.join("tree_visualizer", "assets", "fonts", "RougeScript-Regular.ttf"),
+            os.path.join("assets", "fonts", "RougeScript-Regular.ttf"),
+        ]:
+            candidate = os.path.join(sys._MEIPASS, rel)
+            if os.path.exists(candidate):
+                return candidate
+
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_dir, "assets", "fonts", "RougeScript-Regular.ttf")
 
