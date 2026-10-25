@@ -9,9 +9,10 @@ Provides:
 - Properties: Leaf count, internal nodes, height, full, complete, perfect, balanced.
 - Builders: In+Pre, In+Post, In+Level, Pre+Post (full BT / ambiguity check), BST-Pre, BST-Post.
 - Comparison: Type-safe BST key comparisons (numbers or letters).
-- Parsing: Lenient sequence token extraction.
+- Parsing: Lenient sequence token extraction and level-order null handling.
+- Suggestions: Sequence pair diagnostics, severity levels, and one-click corrective suggestions.
 - Validator: Input diagnostic and suggestion engine.
-- Generators: Random test trees.
+- Generators: Random test trees and guaranteed valid traversal pairs.
 
 CRITICAL: Never import tkinter in this package.
 """
@@ -46,10 +47,12 @@ from tree_visualizer.core.generators import (
     generate_random_binary_tree,
     generate_random_bst,
     generate_random_full_binary_tree,
+    generate_traversal_pair,
     get_random_labels,
+    validate_and_clamp_n,
 )
 from tree_visualizer.core.node import TreeNode, generate_node_id, reset_node_id_counter
-from tree_visualizer.core.parsing import ParsedSequence, parse_sequence
+from tree_visualizer.core.parsing import ParsedSequence, parse_level_order, parse_sequence
 from tree_visualizer.core.properties import (
     compute_properties,
     height,
@@ -61,6 +64,7 @@ from tree_visualizer.core.properties import (
     leaf_count,
     size,
 )
+from tree_visualizer.core.suggestions import DiagnosticResult, diagnose_sequences
 from tree_visualizer.core.traversals import (
     inorder_iterative,
     inorder_recursive,
@@ -110,11 +114,16 @@ __all__ = [
     "build_from_preorder_postorder",
     "build_bst_from_preorder",
     "build_bst_from_postorder",
+    "validate_and_clamp_n",
     "get_random_labels",
     "generate_random_binary_tree",
     "generate_random_full_binary_tree",
     "generate_random_bst",
+    "generate_traversal_pair",
     "ParsedSequence",
     "parse_sequence",
+    "parse_level_order",
+    "DiagnosticResult",
+    "diagnose_sequences",
     "validate_build_input",
 ]
