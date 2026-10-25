@@ -25,9 +25,19 @@ class Player:
         self.current_index: int = 0
         self.is_playing: bool = False
 
-        # Observer callbacks
+        # Observer callbacks & listeners
         self.on_step_changed: Optional[Callable[[int, Optional[Step]], None]] = None
         self.on_play_state_changed: Optional[Callable[[bool], None]] = None
+        self._step_listeners: List[Callable[[int, Optional[Step]], None]] = []
+        self._play_state_listeners: List[Callable[[bool], None]] = []
+
+    def add_step_listener(self, listener: Callable[[int, Optional[Step]], None]) -> None:
+        """Register a callback for step changes."""
+        self._step_listeners.append(listener)
+
+    def add_play_state_listener(self, listener: Callable[[bool], None]) -> None:
+        """Register a callback for play/pause state changes."""
+        self._play_state_listeners.append(listener)
 
     @property
     def total_steps(self) -> int:
@@ -172,7 +182,11 @@ class Player:
     def _notify_step(self) -> None:
         if self.on_step_changed is not None:
             self.on_step_changed(self.current_index, self.current_step)
+        for listener in self._step_listeners:
+            listener(self.current_index, self.current_step)
 
     def _notify_play_state(self) -> None:
         if self.on_play_state_changed is not None:
             self.on_play_state_changed(self.is_playing)
+        for listener in self._play_state_listeners:
+            listener(self.is_playing)
