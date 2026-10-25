@@ -127,6 +127,7 @@ def compute_tree_layout(
         level_height = min(max_level_height, usable_height / float(d_max))
 
     # 3. Position calculation
+    eff_radius = min(node_radius, max(10.0, (usable_width / float(n - 1)) * 0.45)) if n > 1 else node_radius
     nodes_map: Dict[str, NodeLayout] = {}
     for idx, node in enumerate(inorder_nodes):
         if n == 1:
@@ -143,7 +144,7 @@ def compute_tree_layout(
             freq=node.freq,
             x=x,
             y=y,
-            radius=node_radius,
+            radius=eff_radius,
             depth=depths[node.node_id],
             inorder_index=idx,
             label_text=label,

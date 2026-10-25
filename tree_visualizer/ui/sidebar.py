@@ -357,7 +357,7 @@ class CollapsibleSidebar(ttk.Frame):
 
         btn_select = ttk.Button(
             row_sel,
-            text="Select (k)",
+            text="Select",
             style="TButton",
             command=self._handle_bst_select,
         )
@@ -396,7 +396,7 @@ class CollapsibleSidebar(ttk.Frame):
         self.bt_label_type_var = tk.StringVar(value=self.initial_bt_label_type)
         r_num = ttk.Radiobutton(
             row_lbl,
-            text="Numbers",
+            text="123 Numeric",
             variable=self.bt_label_type_var,
             value="numbers",
             command=self._on_label_type_toggle,
@@ -404,7 +404,7 @@ class CollapsibleSidebar(ttk.Frame):
         r_num.pack(side=tk.LEFT, padx=(6, 4))
         r_let = ttk.Radiobutton(
             row_lbl,
-            text="Letters",
+            text="ABC Alphabetic",
             variable=self.bt_label_type_var,
             value="letters",
             command=self._on_label_type_toggle,

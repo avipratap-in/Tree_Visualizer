@@ -53,7 +53,11 @@ class MainWindow:
 
     AUTO_COLLAPSE_WIDTH: int = 980
 
-    def __init__(self, root: Optional[tk.Tk] = None) -> None:
+    def __init__(
+        self,
+        root: Optional[tk.Tk] = None,
+        controller: Optional[Controller] = None,
+    ) -> None:
         enable_windows_dpi_awareness()
 
         self.root: tk.Tk = root if root is not None else tk.Tk()
@@ -66,7 +70,7 @@ class MainWindow:
         self._setup_window_icon()
 
         # State and settings
-        self.controller: Controller = Controller()
+        self.controller: Controller = controller if controller is not None else Controller()
         self.theme_manager: ThemeManager = ThemeManager(
             self.root,
             initial_theme=self.controller.settings.theme,
