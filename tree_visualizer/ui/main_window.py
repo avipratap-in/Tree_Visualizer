@@ -255,32 +255,78 @@ class MainWindow:
 
     def _handle_export_json(self) -> None:
         """Prompt to export tree to JSON file."""
+        if self.controller.is_current_empty:
+            self.controller.set_status("Canvas is empty; nothing to export.", severity="warning")
+            return
+
         from tkinter import filedialog
+        from tree_visualizer.export.json_export import save_tree_to_json_file
+
         path = filedialog.asksaveasfilename(
             defaultextension=".json",
+            initialfile="tree.json",
             filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
             title="Export Tree as JSON",
         )
         if path:
-            import json
-            tree_dict = self.controller.current_tree.to_dict() if self.controller.current_tree else None
             try:
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(tree_dict, f, indent=2)
+                save_tree_to_json_file(self.controller.current_tree, path)
                 self.controller.set_status(f"Exported tree to {os.path.basename(path)}", severity="info")
             except Exception as e:
                 self.controller.set_status(f"Export failed: {e}", severity="error")
 
     def _handle_export_png(self) -> None:
-        """Placeholder for high-res PNG export (implemented fully in Step 7)."""
-        self.controller.set_status("PNG export will be processed in export module.", severity="info")
+        """Re-draw current tree to PNG or SVG file."""
+        if self.controller.is_current_empty:
+            self.controller.set_status("Canvas is empty; nothing to export.", severity="warning")
+            return
+
+        from tkinter import filedialog
+        from tree_visualizer.export.png_export import save_tree_to_png_file
+        from tree_visualizer.export.svg_export import save_tree_to_svg_file
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            initialfile="tree.png",
+            filetypes=[
+                ("PNG Image", "*.png"),
+                ("SVG Vector Image", "*.svg"),
+                ("All files", "*.*"),
+            ],
+            title="Export Tree Image",
+        )
+        if path:
+            try:
+                if path.lower().endswith(".svg"):
+                    save_tree_to_svg_file(
+                        self.controller.current_tree,
+                        path,
+                        theme=self.theme_manager.current,
+                    )
+                    self.controller.set_status(f"Exported vector tree to {os.path.basename(path)}", severity="info")
+                else:
+                    save_tree_to_png_file(
+                        self.controller.current_tree,
+                        path,
+                        theme=self.theme_manager.current,
+                    )
+                    self.controller.set_status(f"Exported tree image to {os.path.basename(path)}", severity="info")
+            except Exception as e:
+                self.controller.set_status(f"Image export failed: {e}", severity="error")
 
     def _handle_share(self) -> None:
-        """Copy share code to system clipboard."""
-        code = self.controller.get_share_code()
-        self.root.clipboard_clear()
-        self.root.clipboard_append(code)
-        self.controller.set_status("Share code copied to clipboard!", severity="info")
+        """Copy share code to clipboard if tree exists, and open ShareDialog."""
+        from tree_visualizer.ui.share_dialog import ShareDialog
+
+        if not self.controller.is_current_empty:
+            code = self.controller.get_share_code()
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code)
+            self.controller.set_status("Share code copied to clipboard!", severity="info")
+        else:
+            self.controller.set_status("Canvas is empty; load or enter share code below.", severity="info")
+
+        ShareDialog(self.root, self.controller, self.theme_manager)
 
     # =========================================================================
     # Keyboard Shortcuts
