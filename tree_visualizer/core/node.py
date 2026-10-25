@@ -72,6 +72,22 @@ class TreeNode:
             "right": self.right.to_dict() if self.right is not None else None,
         }
 
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> Optional[TreeNode]:
+        """Reconstruct a TreeNode from a dictionary snapshot.
+
+        Time Complexity: O(n) where n is size of subtree.
+        Space Complexity: O(h) recursion stack.
+        """
+        if data is None:
+            return None
+        val = data.get("val", data.get("value"))
+        freq = data.get("freq", 1)
+        node_id = data.get("id")
+        left = cls.from_dict(data.get("left"))
+        right = cls.from_dict(data.get("right"))
+        return cls(val=val, left=left, right=right, node_id=node_id, freq=freq)
+
     def clone(self) -> TreeNode:
         """Create a deep copy of the subtree preserving values, frequencies, and IDs.
 
