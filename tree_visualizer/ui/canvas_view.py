@@ -23,6 +23,7 @@ from tree_visualizer.core.properties import height as compute_height, size as co
 from tree_visualizer.recorder.steps import Step
 from tree_visualizer.ui.fonts import (
     get_definition_body_font,
+    get_definition_font_family,
     get_definition_title_font,
     get_ui_font,
 )
@@ -40,7 +41,8 @@ from tree_visualizer.ui.theme import ThemeManager
 class CanvasView(tk.Frame):
     """Interactive tree visualization viewport supporting pan/zoom, tweening, and overlays."""
 
-    BUTTON_STEP: float = 1.1
+    BUTTON_STEP: float = 1.08
+    WHEEL_ZOOM_COEFF: float = 0.00064
     MIN_SCALE: float = 0.3
     MAX_SCALE: float = 3.0
     TWEEN_DURATION_MS: int = 150
@@ -276,19 +278,19 @@ class CanvasView(tk.Frame):
         # Clamp delta per event to [-240, 240]
         delta = max(-240.0, min(240.0, delta))
 
-        # Gentle zoom formula: scale *= exp(-deltaY * 0.0008)
+        # Gentle zoom formula: scale *= exp(-deltaY * coeff)
         # Windows positive delta is zoom in, corresponding to negative deltaY in web
-        factor = math.exp(delta * 0.0008)
+        factor = math.exp(delta * self.WHEEL_ZOOM_COEFF)
         self._apply_zoom(factor, event.x, event.y)
 
     def zoom_in(self) -> None:
-        """Zoom in by 1.1x toward canvas center."""
+        """Zoom in by 1.08x toward canvas center."""
         cx = self.canvas.winfo_width() / 2.0
         cy = self.canvas.winfo_height() / 2.0
         self._apply_zoom(self.BUTTON_STEP, cx, cy)
 
     def zoom_out(self) -> None:
-        """Zoom out by 1/1.1x toward canvas center."""
+        """Zoom out by 1/1.08x toward canvas center."""
         cx = self.canvas.winfo_width() / 2.0
         cy = self.canvas.winfo_height() / 2.0
         self._apply_zoom(1.0 / self.BUTTON_STEP, cx, cy)
@@ -517,9 +519,10 @@ class CanvasView(tk.Frame):
             self._draw_tree_layout(self._layout_result, w, h)
 
     def _draw_definition_card(self, w: float, h: float) -> None:
-        """Render empty-state academic definition card in cursive Rouge Script.
+        """Render empty-state academic definition card in Special Elite.
 
-        Drawn directly onto canvas background so pan/zoom gestures work seamlessly over it.
+        Drawn directly onto canvas background with dynamic non-overlapping vertical flow
+        so pan/zoom gestures work seamlessly over it.
         """
         t = self.theme_manager.current
         card_info = self.DEFINITION_TEXTS.get(self.active_tab, self.DEFINITION_TEXTS["bst"])
@@ -527,43 +530,72 @@ class CanvasView(tk.Frame):
         cx = w / 2.0 + self.pan_x
         cy = h / 2.0 + self.pan_y - 25
 
-        # Title in Rouge Script
-        title_font = get_definition_title_font(int(round(28 * self.scale)))
-        self.canvas.create_text(
+        # Font sizes increased by 20%
+        title_size = max(12, int(round(34 * self.scale)))
+        body_size = max(10, int(round(20 * self.scale)))
+        hint_size = max(8, int(round(12 * self.scale)))
+
+        title_font = get_definition_title_font(title_size)
+        body_font = get_definition_body_font(body_size)
+        hint_font = (get_definition_font_family(), hint_size, "normal")
+
+        # 1. Title item (top-anchored at temporary y=0)
+        title_item = self.canvas.create_text(
             cx,
-            cy - 50 * self.scale,
+            0,
             text=card_info["title"],
             font=title_font,
             fill=t["accent"],
             justify=tk.CENTER,
+            anchor="n",
             tags="definition_card",
         )
+        title_bbox = self.canvas.bbox(title_item)
+        title_bottom = title_bbox[3] if title_bbox else 0
 
-        # Narrative body in Rouge Script
-        body_font = get_definition_body_font(int(round(17 * self.scale)))
-        max_width = min(680 * self.scale, w * 0.85)
-        self.canvas.create_text(
+        # Spacing between title and body
+        gap_title_body = max(16.0, 24.0 * self.scale)
+
+        # 2. Narrative body (top-anchored below title)
+        max_width = max(100.0, min(760.0 * self.scale, w * 0.88))
+        body_item = self.canvas.create_text(
             cx,
-            cy + 20 * self.scale,
+            title_bottom + gap_title_body,
             text=card_info["body"],
             font=body_font,
             fill=t["text_muted"],
             width=max_width,
             justify=tk.CENTER,
+            anchor="n",
             tags="definition_card",
         )
+        body_bbox = self.canvas.bbox(body_item)
+        body_bottom = body_bbox[3] if body_bbox else title_bottom + gap_title_body
 
-        # Actionable hint line
-        hint_font = get_ui_font(max(8, int(round(10 * self.scale))), italic=True)
-        self.canvas.create_text(
+        # Spacing between body and hint
+        gap_body_hint = max(12.0, 18.0 * self.scale)
+
+        # 3. Actionable hint line (top-anchored below body)
+        hint_item = self.canvas.create_text(
             cx,
-            cy + 95 * self.scale,
+            body_bottom + gap_body_hint,
             text=card_info["hint"],
             font=hint_font,
             fill=t["text_muted"],
             justify=tk.CENTER,
+            anchor="n",
             tags="definition_card",
         )
+        hint_bbox = self.canvas.bbox(hint_item)
+
+        # Compute bounding box of entire card to center it vertically around cy
+        total_top = title_bbox[1] if title_bbox else 0
+        total_bottom = hint_bbox[3] if hint_bbox else body_bottom + gap_body_hint
+        total_height = total_bottom - total_top
+
+        target_top = cy - (total_height / 2.0)
+        dy = target_top - total_top
+        self.canvas.move("definition_card", 0, dy)
 
     def _draw_tree_layout(self, layout: TreeLayoutResult, w: float, h: float) -> None:
         """Render edges and nodes using layout result and active step highlights."""

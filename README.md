@@ -48,7 +48,7 @@ An interactive, high-performance desktop application for exploring, visualizing,
   - **Share Codes**: URL-safe Base64 encoded JSON representations with 1-click clipboard copy and import dialog.
 - **Theme Engine**:
   - Modern Clam-based Dark Mode (Slate / Navy) and Light Mode (Clean Academic) with instant live switching.
-  - Custom font loading: Elegant cursive **Rouge Script** for empty-state definition cards (via Windows GDI `AddFontResourceExW` and `tkextrafont`), Segoe UI for crisp system typography, and Consolas for pseudocode.
+  - Custom font loading: Custom **Special Elite** typography for empty-state definition cards (via Windows GDI `AddFontResourceExW` and `tkextrafont`), Segoe UI for crisp system typography, and Consolas for pseudocode.
 
 ---
 
@@ -205,7 +205,7 @@ graph TD
 ## Credits & Acknowledgments
 
 - **Inspiration**: Concept and visual pedagogy inspired by the pioneering work of [VisuAlgo](https://visualgo.net/) (Steven Halim et al., National University of Singapore).
-- **Typography**: [Rouge Script](https://fonts.google.com/specimen/Rouge+Script) designed by Brenda Gallo, licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL).
+- **Typography**: [Special Elite](https://fonts.google.com/specimen/Special+Elite) and [Rouge Script](https://fonts.google.com/specimen/Rouge+Script), licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL).
 - **Original Web Edition**: The original web-based edition of this project remains accessible at [https://avipratap-in.github.io/binary-tree-bst-visualizer/](https://avipratap-in.github.io/binary-tree-bst-visualizer/) (source repository: [https://github.com/avipratap-in/binary-tree-bst-visualizer](https://github.com/avipratap-in/binary-tree-bst-visualizer)).
 
 ---

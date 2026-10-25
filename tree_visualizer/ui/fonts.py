@@ -1,8 +1,8 @@
 """Cross-platform font loader and typography manager.
 
-Loads the custom cursive font 'Rouge Script' for definition cards:
+Loads the custom font 'Special Elite' for definition cards:
 - On Windows: Uses GDI AddFontResourceExW with FR_PRIVATE (process-local).
-- On non-Windows: Uses tkextrafont if installed; otherwise falls back to a serif italic
+- On non-Windows: Uses tkextrafont if installed; otherwise falls back to a typewriter/monospace
   font with a logged warning.
 
 Other application text uses Segoe UI on Windows or platform sans-serif defaults.
@@ -17,41 +17,41 @@ from typing import Any, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Track loaded font availability
-_ROUGE_SCRIPT_LOADED: bool = False
-_ROUGE_SCRIPT_FAMILY: str = "Rouge Script"
-_FALLBACK_SERIF_FAMILY: str = "Georgia" if sys.platform == "win32" else "Times New Roman"
+_SPECIAL_ELITE_LOADED: bool = False
+_SPECIAL_ELITE_FAMILY: str = "Special Elite"
+_FALLBACK_SERIF_FAMILY: str = "Courier New" if sys.platform == "win32" else "monospace"
 
 FR_PRIVATE = 0x10
 
 
-def get_assets_font_path() -> str:
-    """Return the absolute path to RougeScript-Regular.ttf."""
+def get_assets_font_path(filename: str = "SpecialElite-Regular.ttf") -> str:
+    """Return the absolute path to custom font file."""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         for rel in [
-            os.path.join("tree_visualizer", "assets", "fonts", "RougeScript-Regular.ttf"),
-            os.path.join("assets", "fonts", "RougeScript-Regular.ttf"),
+            os.path.join("tree_visualizer", "assets", "fonts", filename),
+            os.path.join("assets", "fonts", filename),
         ]:
             candidate = os.path.join(sys._MEIPASS, rel)
             if os.path.exists(candidate):
                 return candidate
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_dir, "assets", "fonts", "RougeScript-Regular.ttf")
+    return os.path.join(base_dir, "assets", "fonts", filename)
 
 
 def load_custom_fonts() -> bool:
-    """Load Rouge Script into the process font table.
+    """Load Special Elite font into the process font table.
 
-    Returns True if Rouge Script was successfully loaded or is available, False if fallback.
+    Returns True if Special Elite was successfully loaded or is available, False if fallback.
     """
-    global _ROUGE_SCRIPT_LOADED
-    if _ROUGE_SCRIPT_LOADED:
+    global _SPECIAL_ELITE_LOADED
+    if _SPECIAL_ELITE_LOADED:
         return True
 
-    font_path = get_assets_font_path()
+    font_path = get_assets_font_path("SpecialElite-Regular.ttf")
     if not os.path.exists(font_path):
         logger.warning(
-            "Rouge Script font file not found at '%s'. Falling back to '%s'.",
+            "Special Elite font file not found at '%s'. Falling back to '%s'.",
             font_path,
             _FALLBACK_SERIF_FAMILY,
         )
@@ -66,8 +66,8 @@ def load_custom_fonts() -> bool:
                 0,
             )
             if num_added > 0:
-                _ROUGE_SCRIPT_LOADED = True
-                logger.info("Successfully loaded Rouge Script via GDI AddFontResourceExW.")
+                _SPECIAL_ELITE_LOADED = True
+                logger.info("Successfully loaded Special Elite via GDI AddFontResourceExW.")
                 return True
             else:
                 logger.warning(
@@ -75,19 +75,19 @@ def load_custom_fonts() -> bool:
                     _FALLBACK_SERIF_FAMILY,
                 )
         except Exception as e:
-            logger.warning("Failed to load Rouge Script font on Windows: %s", e)
+            logger.warning("Failed to load Special Elite font on Windows: %s", e)
     else:
         # Non-Windows platform: attempt tkextrafont
         try:
             import tkextrafont  # type: ignore
             # tkextrafont loaded lazily if Tk root is initialized
-            _ROUGE_SCRIPT_LOADED = True
-            logger.info("Rouge Script will be loaded via tkextrafont.")
+            _SPECIAL_ELITE_LOADED = True
+            logger.info("Special Elite will be loaded via tkextrafont.")
             return True
         except ImportError:
             logger.warning(
                 "tkextrafont is not installed on this non-Windows platform. "
-                "Rouge Script cannot be loaded natively; falling back to serif italic '%s'.",
+                "Special Elite cannot be loaded natively; falling back to serif '%s'.",
                 _FALLBACK_SERIF_FAMILY,
             )
         except Exception as e:
@@ -99,22 +99,22 @@ def load_custom_fonts() -> bool:
 def get_definition_font_family() -> str:
     """Return font family name for empty canvas definition card."""
     load_custom_fonts()
-    if _ROUGE_SCRIPT_LOADED:
-        return _ROUGE_SCRIPT_FAMILY
+    if _SPECIAL_ELITE_LOADED:
+        return _SPECIAL_ELITE_FAMILY
     return _FALLBACK_SERIF_FAMILY
 
 
-def get_definition_title_font(size: int = 28) -> Tuple[str, int, str]:
-    """Return font tuple for definition card title."""
+def get_definition_title_font(size: int = 34) -> Tuple[str, int, str]:
+    """Return font tuple for definition card title (default size increased 20% to 34)."""
     family = get_definition_font_family()
-    weight = "normal" if family == _ROUGE_SCRIPT_FAMILY else "bold italic"
+    weight = "normal"
     return (family, size, weight)
 
 
-def get_definition_body_font(size: int = 16) -> Tuple[str, int, str]:
-    """Return font tuple for definition card narrative body."""
+def get_definition_body_font(size: int = 20) -> Tuple[str, int, str]:
+    """Return font tuple for definition card narrative body (default size increased 20% to 20)."""
     family = get_definition_font_family()
-    weight = "normal" if family == _ROUGE_SCRIPT_FAMILY else "italic"
+    weight = "normal"
     return (family, size, weight)
 
 

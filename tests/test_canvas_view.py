@@ -14,7 +14,7 @@ from tree_visualizer.ui.theme import ThemeManager
 
 @requires_display
 def test_canvas_zoom_in_out():
-    """Verify zoom in and out buttons scale by BUTTON_STEP (1.1)."""
+    """Verify zoom in and out buttons scale by BUTTON_STEP (1.08)."""
     root = tk.Tk()
     tm = ThemeManager(root)
     cv = CanvasView(root, theme_manager=tm)
@@ -27,7 +27,7 @@ def test_canvas_zoom_in_out():
     # Zoom in
     cv.zoom_in()
     root.update()
-    assert pytest.approx(cv.scale, 0.01) == 1.10
+    assert pytest.approx(cv.scale, 0.01) == 1.08
 
     # Zoom out
     cv.zoom_out()
@@ -39,7 +39,7 @@ def test_canvas_zoom_in_out():
 
 @requires_display
 def test_canvas_wheel_zoom_normalization():
-    """Verify mouse wheel delta normalization across platforms."""
+    """Verify mouse wheel delta normalization across platforms with 20% decreased sensitivity."""
     root = tk.Tk()
     tm = ThemeManager(root)
     cv = CanvasView(root, theme_manager=tm)
@@ -53,7 +53,7 @@ def test_canvas_wheel_zoom_normalization():
     event_win_up.y = 250
     cv._on_mouse_wheel(event_win_up)
     root.update()
-    expected_factor = math.exp(120 * 0.0008)
+    expected_factor = math.exp(120 * cv.WHEEL_ZOOM_COEFF)
     assert pytest.approx(cv.scale, 0.01) == expected_factor
 
     # Emulate Linux Button-5 scroll down (num = 5)
@@ -65,7 +65,7 @@ def test_canvas_wheel_zoom_normalization():
     scale_before = cv.scale
     cv._on_mouse_wheel(event_lin_down)
     root.update()
-    expected_factor_down = math.exp(-120 * 0.0008)
+    expected_factor_down = math.exp(-120 * cv.WHEEL_ZOOM_COEFF)
     assert pytest.approx(cv.scale, 0.01) == scale_before * expected_factor_down
 
     root.destroy()
