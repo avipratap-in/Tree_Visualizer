@@ -1,9 +1,14 @@
 """Cross-platform font loader and typography manager.
 
-Loads the custom font 'Special Elite' for definition cards:
+Loads custom bundled fonts for definition cards:
+- Heading: 'Cinzel Decorative' Bold (700)
+- Body: 'Agbalumo' Regular (400)
+- Hint: 'Agbalumo' Regular (400)
+
+Loading mechanism:
 - On Windows: Uses GDI AddFontResourceExW with FR_PRIVATE (process-local).
-- On non-Windows: Uses tkextrafont if installed; otherwise falls back to a typewriter/monospace
-  font with a logged warning.
+- On non-Windows: Uses tkextrafont if installed; otherwise falls back to Georgia/serif
+  with a single logged warning.
 
 Other application text uses Segoe UI on Windows or platform sans-serif defaults.
 """
@@ -12,20 +17,46 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Track loaded font availability
-_SPECIAL_ELITE_LOADED: bool = False
-_SPECIAL_ELITE_FAMILY: str = "Special Elite"
-_FALLBACK_SERIF_FAMILY: str = "Courier New" if sys.platform == "win32" else "monospace"
+# ---------------------------------------------------------------------------
+# Named Constants: Font Families, Weights, and Baseline Scaled Sizes (+20%)
+# ---------------------------------------------------------------------------
+FONT_FAMILY_HEADING: str = "Cinzel Decorative"
+FONT_FAMILY_BODY: str = "Agbalumo"
+FONT_FAMILY_HINT: str = "Agbalumo"
+FONT_FAMILY_FALLBACK: str = "Georgia"
+
+FONT_WEIGHT_HEADING: str = "bold"
+FONT_WEIGHT_BODY: str = "normal"
+FONT_WEIGHT_HINT: str = "normal"
+
+# Default baseline font sizes (increased 20% from v1.0.0 baselines 28, 17, 10)
+FONT_SIZE_HEADING: int = 34  # round(28 * 1.2) = 34
+FONT_SIZE_BODY: int = 20     # round(17 * 1.2) = 20
+FONT_SIZE_HINT: int = 12     # round(10 * 1.2) = 12
+
+# Minimum clamped font sizes
+MIN_FONT_SIZE_HEADING: int = 12
+MIN_FONT_SIZE_BODY: int = 10
+MIN_FONT_SIZE_HINT: int = 10
 
 FR_PRIVATE = 0x10
 
+# Tracking loaded font availability
+_CUSTOM_FONTS_LOADED: bool = False
+_FALLBACK_WARNED: bool = False
+_BUNDLED_FONT_FILES = [
+    "Agbalumo-Regular.ttf",
+    "CinzelDecorative-Regular.ttf",
+    "CinzelDecorative-Bold.ttf",
+]
 
-def get_assets_font_path(filename: str = "SpecialElite-Regular.ttf") -> str:
-    """Return the absolute path to custom font file."""
+
+def get_assets_font_path(filename: str) -> str:
+    """Return the absolute path to a bundled custom font file."""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         for rel in [
             os.path.join("tree_visualizer", "assets", "fonts", filename),
@@ -40,81 +71,102 @@ def get_assets_font_path(filename: str = "SpecialElite-Regular.ttf") -> str:
 
 
 def load_custom_fonts() -> bool:
-    """Load Special Elite font into the process font table.
+    """Load bundled custom fonts into the process font table.
 
-    Returns True if Special Elite was successfully loaded or is available, False if fallback.
+    Returns True if custom fonts were successfully registered, False if fallback.
     """
-    global _SPECIAL_ELITE_LOADED
-    if _SPECIAL_ELITE_LOADED:
+    global _CUSTOM_FONTS_LOADED, _FALLBACK_WARNED
+    if _CUSTOM_FONTS_LOADED:
         return True
 
-    font_path = get_assets_font_path("SpecialElite-Regular.ttf")
-    if not os.path.exists(font_path):
-        logger.warning(
-            "Special Elite font file not found at '%s'. Falling back to '%s'.",
-            font_path,
-            _FALLBACK_SERIF_FAMILY,
-        )
-        return False
+    loaded_all = True
 
     if sys.platform == "win32":
         try:
             import ctypes
-            num_added = ctypes.windll.gdi32.AddFontResourceExW(
-                os.path.abspath(font_path),
-                FR_PRIVATE,
-                0,
-            )
-            if num_added > 0:
-                _SPECIAL_ELITE_LOADED = True
-                logger.info("Successfully loaded Special Elite via GDI AddFontResourceExW.")
-                return True
-            else:
-                logger.warning(
-                    "AddFontResourceExW returned 0 fonts added. Falling back to '%s'.",
-                    _FALLBACK_SERIF_FAMILY,
+            for filename in _BUNDLED_FONT_FILES:
+                font_path = get_assets_font_path(filename)
+                if not os.path.exists(font_path):
+                    loaded_all = False
+                    continue
+                num_added = ctypes.windll.gdi32.AddFontResourceExW(
+                    os.path.abspath(font_path),
+                    FR_PRIVATE,
+                    0,
                 )
+                if num_added <= 0:
+                    loaded_all = False
+            if loaded_all:
+                _CUSTOM_FONTS_LOADED = True
+                logger.info("Successfully registered Agbalumo and Cinzel Decorative via GDI AddFontResourceExW.")
+                return True
         except Exception as e:
-            logger.warning("Failed to load Special Elite font on Windows: %s", e)
+            loaded_all = False
+            logger.warning("Failed to register Windows GDI fonts: %s", e)
     else:
-        # Non-Windows platform: attempt tkextrafont
+        # Non-Windows platform: attempt registration via tkextrafont
         try:
             import tkextrafont  # type: ignore
-            # tkextrafont loaded lazily if Tk root is initialized
-            _SPECIAL_ELITE_LOADED = True
-            logger.info("Special Elite will be loaded via tkextrafont.")
+            for filename in _BUNDLED_FONT_FILES:
+                font_path = get_assets_font_path(filename)
+                if os.path.exists(font_path):
+                    try:
+                        tkextrafont.Font(file=font_path)
+                    except Exception:
+                        pass
+            _CUSTOM_FONTS_LOADED = True
+            logger.info("Registered custom fonts via tkextrafont.")
             return True
         except ImportError:
-            logger.warning(
-                "tkextrafont is not installed on this non-Windows platform. "
-                "Special Elite cannot be loaded natively; falling back to serif '%s'.",
-                _FALLBACK_SERIF_FAMILY,
-            )
+            loaded_all = False
         except Exception as e:
+            loaded_all = False
             logger.warning("Failed to register font with tkextrafont: %s", e)
 
-    return False
+    if not _CUSTOM_FONTS_LOADED and not _FALLBACK_WARNED:
+        logger.warning(
+            "Custom fonts ('Agbalumo', 'Cinzel Decorative') could not be loaded; "
+            "falling back to '%s'.",
+            FONT_FAMILY_FALLBACK,
+        )
+        _FALLBACK_WARNED = True
+
+    return _CUSTOM_FONTS_LOADED
 
 
-def get_definition_font_family() -> str:
-    """Return font family name for empty canvas definition card."""
+def get_definition_font_family(role: str = "body") -> str:
+    """Return active font family name for empty canvas definition card."""
     load_custom_fonts()
-    if _SPECIAL_ELITE_LOADED:
-        return _SPECIAL_ELITE_FAMILY
-    return _FALLBACK_SERIF_FAMILY
+    if _CUSTOM_FONTS_LOADED:
+        if role == "heading" or role == "title":
+            return FONT_FAMILY_HEADING
+        return FONT_FAMILY_BODY
+    return FONT_FAMILY_FALLBACK
 
 
-def get_definition_title_font(size: int = 34) -> Tuple[str, int, str]:
-    """Return font tuple for definition card title (default size increased 20% to 34)."""
-    family = get_definition_font_family()
-    weight = "normal"
+def get_definition_title_font(size: int = FONT_SIZE_HEADING) -> Tuple[str, int, str]:
+    """Return font tuple for definition card heading (Cinzel Decorative Bold)."""
+    return get_definition_heading_font(size)
+
+
+def get_definition_heading_font(size: int = FONT_SIZE_HEADING) -> Tuple[str, int, str]:
+    """Return font tuple for definition card heading (Cinzel Decorative Bold)."""
+    family = get_definition_font_family("heading")
+    weight = FONT_WEIGHT_HEADING
     return (family, size, weight)
 
 
-def get_definition_body_font(size: int = 20) -> Tuple[str, int, str]:
-    """Return font tuple for definition card narrative body (default size increased 20% to 20)."""
-    family = get_definition_font_family()
-    weight = "normal"
+def get_definition_body_font(size: int = FONT_SIZE_BODY) -> Tuple[str, int, str]:
+    """Return font tuple for definition card narrative body (Agbalumo Regular)."""
+    family = get_definition_font_family("body")
+    weight = FONT_WEIGHT_BODY
+    return (family, size, weight)
+
+
+def get_definition_hint_font(size: int = FONT_SIZE_HINT) -> Tuple[str, int, str]:
+    """Return font tuple for definition card hint line (Agbalumo Regular)."""
+    family = get_definition_font_family("hint")
+    weight = FONT_WEIGHT_HINT
     return (family, size, weight)
 
 
