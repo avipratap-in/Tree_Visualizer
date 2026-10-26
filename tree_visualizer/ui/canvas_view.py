@@ -6,9 +6,9 @@ Renders:
 - Edges drawn first, followed by node circles and frequency labels.
 - Adaptive font sizing for longer labels to ensure text fits inside circles.
 - Smooth mouse wheel zooming toward cursor with cross-platform delta normalization:
-    scale *= exp(-delta * 0.0008), clamped per event.
+    scale *= exp(delta * 0.00064), clamped per event.
 - Animated smooth reset back to default scale (1.0) and origin (0, 0).
-- Empty-state definition cards rendered in Rouge Script that never block pan/zoom.
+- Empty-state definition cards rendered in Cinzel Decorative and Agbalumo that never block pan/zoom.
 - Floating overlay panels: stats badge, zoom controls, visited banner, status box, pseudocode panel.
 """
 from __future__ import annotations
@@ -18,12 +18,20 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+import tkinter.font as tkfont
+
 from tree_visualizer.core.node import TreeNode
 from tree_visualizer.core.properties import height as compute_height, size as compute_size
 from tree_visualizer.recorder.steps import Step
+from tree_visualizer.ui.card_layout import compute_card_layout
 from tree_visualizer.ui.fonts import (
+    FONT_SIZE_BODY,
+    FONT_SIZE_HEADING,
+    FONT_SIZE_HINT,
     get_definition_body_font,
     get_definition_font_family,
+    get_definition_heading_font,
+    get_definition_hint_font,
     get_definition_title_font,
     get_ui_font,
 )
@@ -41,8 +49,15 @@ from tree_visualizer.ui.theme import ThemeManager
 class CanvasView(tk.Frame):
     """Interactive tree visualization viewport supporting pan/zoom, tweening, and overlays."""
 
-    BUTTON_STEP: float = 1.08
-    WHEEL_ZOOM_COEFF: float = 0.00064
+    OLD_BUTTON_STEP: float = 1.10
+    OLD_WHEEL_ZOOM_COEFF: float = 0.0008
+
+    # 20% sensitivity reduction:
+    # Button step: new_step = exp(0.8 * ln(old_step)) ~= 1.0792823
+    BUTTON_STEP: float = math.exp(0.8 * math.log(1.10))
+    # Wheel coeff: new_coeff = old_coeff * 0.8 = 0.00064
+    WHEEL_ZOOM_COEFF: float = 0.0008 * 0.8
+
     MIN_SCALE: float = 0.3
     MAX_SCALE: float = 3.0
     TWEEN_DURATION_MS: int = 150
@@ -519,83 +534,101 @@ class CanvasView(tk.Frame):
             self._draw_tree_layout(self._layout_result, w, h)
 
     def _draw_definition_card(self, w: float, h: float) -> None:
-        """Render empty-state academic definition card in Special Elite.
+        """Render empty-state academic definition card with Agbalumo and Cinzel Decorative.
 
-        Drawn directly onto canvas background with dynamic non-overlapping vertical flow
-        so pan/zoom gestures work seamlessly over it.
+        Drawn directly onto canvas background with mathematically calculated, non-overlapping
+        vertical flow and font-proportional line spacing.
         """
         t = self.theme_manager.current
         card_info = self.DEFINITION_TEXTS.get(self.active_tab, self.DEFINITION_TEXTS["bst"])
 
-        cx = w / 2.0 + self.pan_x
-        cy = h / 2.0 + self.pan_y - 25
+        # Pure text measurer implementation using Tkinter font metrics
+        def _measure(text: str, role: str, font_size: int, wrap_width: float) -> Tuple[float, int, float]:
+            if role == "title" or role == "heading":
+                fam, sz, wt = get_definition_heading_font(font_size)
+            elif role == "body":
+                fam, sz, wt = get_definition_body_font(font_size)
+            else:
+                fam, sz, wt = get_definition_hint_font(font_size)
 
-        # Font sizes increased by 20%
-        title_size = max(12, int(round(34 * self.scale)))
-        body_size = max(10, int(round(20 * self.scale)))
-        hint_size = max(8, int(round(12 * self.scale)))
+            f = tkfont.Font(family=fam, size=sz, weight=wt)
+            linespace = float(f.metrics("linespace"))
 
-        title_font = get_definition_title_font(title_size)
-        body_font = get_definition_body_font(body_size)
-        hint_font = (get_definition_font_family(), hint_size, "normal")
+            words = text.split(" ")
+            current_line = ""
+            lines = 0
+            max_w = 0.0
+            for word in words:
+                cand = f"{current_line} {word}".strip()
+                measured_w = float(f.measure(cand))
+                if measured_w <= wrap_width or not current_line:
+                    current_line = cand
+                    if measured_w > max_w:
+                        max_w = measured_w
+                else:
+                    lines += 1
+                    current_line = word
+                    word_w = float(f.measure(word))
+                    if word_w > max_w:
+                        max_w = word_w
+            if current_line:
+                lines += 1
+            return linespace, max(1, lines), max_w
 
-        # 1. Title item (top-anchored at temporary y=0)
-        title_item = self.canvas.create_text(
-            cx,
-            0,
-            text=card_info["title"],
-            font=title_font,
+        layout = compute_card_layout(
+            canvas_width=w,
+            canvas_height=h,
+            title_text=card_info["title"],
+            body_text=card_info["body"],
+            hint_text=card_info["hint"],
+            measure_fn=_measure,
+            title_font_size=FONT_SIZE_HEADING,
+            body_font_size=FONT_SIZE_BODY,
+            hint_font_size=FONT_SIZE_HINT,
+            pan_x=self.pan_x,
+            pan_y=self.pan_y - 20,
+            scale=self.scale,
+            max_card_width=720.0,
+        )
+
+        # 1. Heading (Cinzel Decorative Bold)
+        self.canvas.create_text(
+            layout.title.center_x,
+            layout.title.top_y,
+            text=layout.title.text,
+            font=get_definition_heading_font(layout.title.font_size),
             fill=t["accent"],
+            width=layout.title.wrap_width,
             justify=tk.CENTER,
             anchor="n",
             tags="definition_card",
         )
-        title_bbox = self.canvas.bbox(title_item)
-        title_bottom = title_bbox[3] if title_bbox else 0
 
-        # Spacing between title and body
-        gap_title_body = max(16.0, 24.0 * self.scale)
-
-        # 2. Narrative body (top-anchored below title)
-        max_width = max(100.0, min(760.0 * self.scale, w * 0.88))
-        body_item = self.canvas.create_text(
-            cx,
-            title_bottom + gap_title_body,
-            text=card_info["body"],
-            font=body_font,
+        # 2. Narrative Body (Agbalumo Regular)
+        self.canvas.create_text(
+            layout.body.center_x,
+            layout.body.top_y,
+            text=layout.body.text,
+            font=get_definition_body_font(layout.body.font_size),
             fill=t["text_muted"],
-            width=max_width,
+            width=layout.body.wrap_width,
             justify=tk.CENTER,
             anchor="n",
             tags="definition_card",
         )
-        body_bbox = self.canvas.bbox(body_item)
-        body_bottom = body_bbox[3] if body_bbox else title_bottom + gap_title_body
 
-        # Spacing between body and hint
-        gap_body_hint = max(12.0, 18.0 * self.scale)
-
-        # 3. Actionable hint line (top-anchored below body)
-        hint_item = self.canvas.create_text(
-            cx,
-            body_bottom + gap_body_hint,
-            text=card_info["hint"],
-            font=hint_font,
+        # 3. Actionable Hint (Agbalumo Regular)
+        self.canvas.create_text(
+            layout.hint.center_x,
+            layout.hint.top_y,
+            text=layout.hint.text,
+            font=get_definition_hint_font(layout.hint.font_size),
             fill=t["text_muted"],
+            width=layout.hint.wrap_width,
             justify=tk.CENTER,
             anchor="n",
             tags="definition_card",
         )
-        hint_bbox = self.canvas.bbox(hint_item)
-
-        # Compute bounding box of entire card to center it vertically around cy
-        total_top = title_bbox[1] if title_bbox else 0
-        total_bottom = hint_bbox[3] if hint_bbox else body_bottom + gap_body_hint
-        total_height = total_bottom - total_top
-
-        target_top = cy - (total_height / 2.0)
-        dy = target_top - total_top
-        self.canvas.move("definition_card", 0, dy)
 
     def _draw_tree_layout(self, layout: TreeLayoutResult, w: float, h: float) -> None:
         """Render edges and nodes using layout result and active step highlights."""
