@@ -113,7 +113,7 @@ The application layout consists of:
   - Concealed when empty.
 - **Empty Canvas Definition Card**:
   - Displayed prominently in the center of the canvas when the current tree is `null`.
-  - Rendered in cursive **Rouge Script** font (`RougeScript-Regular.ttf`, 28pt-32pt title, 18pt body).
+  - Rendered in **Cinzel Decorative** Bold (`CinzelDecorative-Bold.ttf`, 34pt title) and **Agbalumo** (`Agbalumo-Regular.ttf`, 20pt body, 12pt hint).
   - Contains title, academic definition, and actionable hint.
 - **VisuAlgo Yellow Status Box**:
   - Positioned bottom-left or overlaid above player bar.
@@ -166,15 +166,15 @@ For a tree with $n$ nodes:
 ---
 
 ## 5. Zoom & Pan Constants
-- `WHEEL_SENSITIVITY = 0.0008`: Gentle mouse wheel zooming centered on cursor.
-- `BUTTON_STEP = 1.1`: Zoom step factor for `+` and `−` buttons.
+- `WHEEL_SENSITIVITY = 0.00064`: Gentle mouse wheel zooming centered on cursor (reduced 20% sensitivity).
+- `BUTTON_STEP = 1.079`: Zoom step factor for `+` and `−` buttons (reduced 20% sensitivity).
 - `MIN_SCALE = 0.3` (30% minimum zoom).
 - `MAX_SCALE = 3.0` (300% maximum zoom).
 - Canvas click-and-drag to pan coordinates $(pan_X, pan_Y)$.
 
 ---
 
-## 6. Definition Card Texts (Rouge Script)
+## 6. Definition Card Texts (Cinzel Decorative & Agbalumo)
 
 Whenever a tab's tree is empty (`currentTree == null`), display the corresponding definition card:
 

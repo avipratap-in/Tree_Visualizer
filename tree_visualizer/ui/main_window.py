@@ -23,6 +23,7 @@ from tree_visualizer.constants import (
     DEFAULT_WINDOW_WIDTH,
     MIN_WINDOW_HEIGHT,
     MIN_WINDOW_WIDTH,
+    VERSION,
 )
 from tree_visualizer.state.controller import Controller
 from tree_visualizer.ui.canvas_view import CanvasView
@@ -61,7 +62,7 @@ class MainWindow:
         enable_windows_dpi_awareness()
 
         self.root: tk.Tk = root if root is not None else tk.Tk()
-        self.root.title(APP_NAME)
+        self.root.title(f"{APP_NAME} v{VERSION}")
         self.root.geometry(f"{DEFAULT_WINDOW_WIDTH}x{DEFAULT_WINDOW_HEIGHT}")
         self.root.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 

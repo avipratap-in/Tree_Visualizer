@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,14 @@ def build():
     root = Path(__file__).resolve().parent.parent
     icon_path = root / "tree_visualizer" / "assets" / "icon.ico"
     assets_src = root / "tree_visualizer" / "assets"
+
+    # Always ensure clean build
+    build_dir = root / "build"
+    dist_dir = root / "dist"
+    if build_dir.exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir, ignore_errors=True)
 
     sep = ";" if sys.platform.startswith("win") else ":"
     add_data = f"{assets_src}{sep}tree_visualizer/assets"

@@ -36,7 +36,7 @@ An interactive, high-performance desktop application for exploring, visualizing,
   - **Tree Reconstruction**: 6 reconstruction modes (Preorder+Inorder, Inorder+Postorder, Level-Order+Inorder, Preorder+Postorder for Full Trees, BST from Preorder, BST from Postorder) with live debounced diagnostics, intelligent 1-click auto-fix suggestions, and ambiguity warnings.
 - **Pedagogical Step-by-Step Animation**:
   - Deterministic timeline recording producing snapshots with node/edge highlights, visited node sequences, contextual narrative status messages, and synchronized pseudocode line execution.
-  - Media player bar with Play, Pause, Replay, Step Forward, Step Backward, draggable progress scrubber, and speed multipliers (0.5x, 1x, 1.5x, 2x, 4x).
+  - Media player bar with Play, Pause, Replay, Step Forward, Step Backward, draggable progress scrubber, and speed multipliers (0.25x, 0.5x, 1.0x, 2.0x, 4.0x).
 - **Mathematical Layout & High-DPI Canvas**:
   - Inorder X-coordinate projection guaranteeing zero edge crossings.
   - Windows DPI awareness (`SetProcessDpiAwareness`) rendering razor-sharp vector text and antialiased nodes.
@@ -48,7 +48,7 @@ An interactive, high-performance desktop application for exploring, visualizing,
   - **Share Codes**: URL-safe Base64 encoded JSON representations with 1-click clipboard copy and import dialog.
 - **Theme Engine**:
   - Modern Clam-based Dark Mode (Slate / Navy) and Light Mode (Clean Academic) with instant live switching.
-  - Custom font loading: Custom **Special Elite** typography for empty-state definition cards (via Windows GDI `AddFontResourceExW` and `tkextrafont`), Segoe UI for crisp system typography, and Consolas for pseudocode.
+  - Custom font loading: Bundled **Cinzel Decorative** (Bold 700) headings and **Agbalumo** (Regular 400) body/hint typography for empty-state definition cards (via Windows GDI `AddFontResourceExW` and `tkextrafont`), Segoe UI for crisp system typography, and Consolas for pseudocode.
 
 ---
 
@@ -56,7 +56,8 @@ An interactive, high-performance desktop application for exploring, visualizing,
 
 Pre-compiled standalone Windows executables with bundled assets and fonts are available on GitHub Releases:
 
-👉 **[Download Latest Release (`Tree_Visualizer.exe`)](https://github.com/avipratap-in/Tree_Visualizer/releases/latest)**
+- 🌐 **[View Latest Release Page](https://github.com/avipratap-in/Tree_Visualizer/releases/latest)**
+- 📥 **[Direct Download `Tree_Visualizer.exe`](https://github.com/avipratap-in/Tree_Visualizer/releases/latest/download/Tree_Visualizer.exe)**
 
 Simply download `Tree_Visualizer.exe` and double-click to launch—no Python installation required.
 
@@ -205,7 +206,7 @@ graph TD
 ## Credits & Acknowledgments
 
 - **Inspiration**: Concept and visual pedagogy inspired by the pioneering work of [VisuAlgo](https://visualgo.net/) (Steven Halim et al., National University of Singapore).
-- **Typography**: [Special Elite](https://fonts.google.com/specimen/Special+Elite) and [Rouge Script](https://fonts.google.com/specimen/Rouge+Script), licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL).
+- **Typography**: [Agbalumo](https://fonts.google.com/specimen/Agbalumo) and [Cinzel Decorative](https://fonts.google.com/specimen/Cinzel+Decorative), licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL).
 - **Original Web Edition**: The original web-based edition of this project remains accessible at [https://avipratap-in.github.io/binary-tree-bst-visualizer/](https://avipratap-in.github.io/binary-tree-bst-visualizer/) (source repository: [https://github.com/avipratap-in/binary-tree-bst-visualizer](https://github.com/avipratap-in/binary-tree-bst-visualizer)).
 
 ---

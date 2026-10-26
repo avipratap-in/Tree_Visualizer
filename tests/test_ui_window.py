@@ -5,7 +5,7 @@ import os
 import tkinter as tk
 import pytest
 from tests.conftest import requires_display
-from tree_visualizer.constants import APP_NAME, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH
+from tree_visualizer.constants import APP_NAME, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, VERSION
 from tree_visualizer.ui.fonts import (
     get_definition_body_font,
     get_definition_title_font,
@@ -54,8 +54,8 @@ def test_main_window_initialization():
     app = MainWindow(root=root)
     root.update()
 
-    assert root.title() == APP_NAME
-    assert root.title() == "Tree_Visualizer"
+    assert root.title() == f"{APP_NAME} v{VERSION}"
+    assert root.title() == "Tree_Visualizer v1.0.1"
     assert app.top_bar is not None
     assert app.sidebar is not None
     assert app.canvas_view is not None

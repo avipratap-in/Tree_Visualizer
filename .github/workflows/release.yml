@@ -32,6 +32,12 @@ jobs:
         run: |
           pytest -v
 
+      - name: Clean build artifacts
+        shell: pwsh
+        run: |
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+          if (Test-Path dist) { Remove-Item -Recurse -Force dist }
+
       - name: Build Windows Executable
         run: |
           python scripts/build_exe.py
@@ -47,6 +53,7 @@ jobs:
           name: Tree_Visualizer ${{ github.ref_name }}
           draft: false
           prerelease: false
+          make_latest: true
           generate_release_notes: true
           files: |
             dist/Tree_Visualizer.exe

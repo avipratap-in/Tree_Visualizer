@@ -9,7 +9,7 @@ from tree_visualizer.constants import APP_NAME, VERSION
 def test_constants():
     """Verify official application name and version constants."""
     assert APP_NAME == "Tree_Visualizer"
-    assert VERSION == "1.0.0"
+    assert VERSION == "1.0.1"
 
 
 def test_layer_imports_do_not_import_tkinter():
